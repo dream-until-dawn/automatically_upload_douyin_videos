@@ -117,7 +117,39 @@ if ($check.ExitCode -ne 0) {
 }
 Write-Host ""
 
-# ---------- 步骤 4：确认未被安全软件隔离 ----------
+# ---------- 步骤 4：命令行契约验证 ----------
+# 自检只证明「跑得起来」，证明不了「退出码和 JSON 是一致的」。
+# 上游同时依赖这两者做决策，不一致会让它收到两个互相矛盾的结论。
+Write-Host "[契约] 校验退出码与 JSON 结果是否一致..." -ForegroundColor Cyan
+
+$cases = @(
+    @{ Args = @();                     Expect = 18; Name = "无参数" },
+    @{ Args = @("未知命令");           Expect = 3;  Name = "未知子命令" },
+    @{ Args = @("publish");            Expect = 18; Name = "publish 缺配置" },
+    @{ Args = @("publish", "垃圾数据");Expect = 19; Name = "配置无法解析" }
+)
+
+$contractOk = $true
+foreach ($case in $cases) {
+    $out = & $exePath @($case.Args) 2>$null
+    $code = $LASTEXITCODE
+    $json = $null
+    try { $json = $out | Select-Object -Last 1 | ConvertFrom-Json } catch { }
+
+    $ok = ($null -ne $json) -and ($code -eq $case.Expect) -and ($json.code -eq $code)
+    if (-not $ok) { $contractOk = $false }
+    $flag = if ($ok) { "OK " } else { "BAD" }
+    $name = if ($null -ne $json) { $json.name } else { "<无法解析 JSON>" }
+    Write-Host "       [$flag] $($case.Name)：退出码=$code 期望=$($case.Expect) name=$name"
+}
+
+if (-not $contractOk) {
+    Write-Host "[失败] 命令行契约校验未通过" -ForegroundColor Red
+    exit 1
+}
+Write-Host ""
+
+# ---------- 步骤 5：确认未被安全软件隔离 ----------
 $survived = Test-Path $exePath
 Write-Host "[复查] 执行后产物仍存在：$survived"
 
