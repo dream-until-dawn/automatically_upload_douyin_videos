@@ -27,11 +27,21 @@ logger = get_logger("browser.launcher")
 # 关闭浏览器的等待上限（秒）。超过即放弃等待，进程退出时系统会回收。
 CLOSE_TIMEOUT = 10.0
 
-# 启动参数
+# 内置启动参数。调用方配置的参数会 **追加** 在其后，不替换这些。
 _LAUNCH_ARGS = [
     # 关闭 navigator.webdriver 标记，降低被识别为自动化的概率
     "--disable-blink-features=AutomationControlled",
 ]
+
+
+def build_launch_args(extra: list[str]) -> list[str]:
+    """把调用方追加的参数拼到内置参数之后。
+
+    追加而非替换：内置参数是程序正常工作的前提，不该被外部配置覆盖掉。
+    会破坏运行前提的参数（如 --user-data-dir）在配置校验阶段就被拒绝了，
+    见 config/runtime.py 的 validate_browser_args。
+    """
+    return [*_LAUNCH_ARGS, *extra]
 
 
 async def launch_context(
@@ -52,14 +62,17 @@ async def launch_context(
     Raises:
         PublishError: BROWSER_LAUNCH_FAILED。
     """
-    logger.info(f"[启动] 正在启动浏览器（无头={config.headless}）")
+    extra_note = (
+        f"，附加参数 {len(config.browser_args)} 项" if config.browser_args else ""
+    )
+    logger.info(f"[启动] 正在启动浏览器（无头={config.headless}{extra_note}）")
 
     try:
         context = await playwright.chromium.launch_persistent_context(
             user_data_dir=str(user_data_dir),
             executable_path=config.exec_path,
             headless=config.headless,
-            args=_LAUNCH_ARGS,
+            args=build_launch_args(config.browser_args),
         )
     except Exception as exc:
         raise PublishError(

@@ -33,17 +33,9 @@ from douyin_publisher.core.waiting import poll_until
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.cart")
-
-# 常规元素等待超时（秒）
-ELEMENT_TIMEOUT = 10.0
-
 # 探测「是否已存在商品」的超时（秒）。取值很短：绝大多数情况下没有残留商品，
 # 等久了纯属浪费——这是一次「有则处理、无则跳过」的探测，不是必须成立的前提。
 EXISTING_PROBE_TIMEOUT = 2.0
-
-# 等待商品编辑弹窗出结论的超时（秒）
-MODAL_TIMEOUT = 15.0
-
 # 各环节之间的停顿（秒）
 STEP_PAUSE = 0.5
 
@@ -79,7 +71,7 @@ async def _remove_existing_product(ctx: PipelineContext) -> None:
 async def _open_cart_dropdown(ctx: PipelineContext) -> None:
     """展开扩展信息下拉并选中「购物车」。"""
     section = await find_usable(
-        ctx.page, Cart.SECTION_XPATH, timeout=ctx.deadline.budget(ELEMENT_TIMEOUT)
+        ctx.page, Cart.SECTION_XPATH, timeout=ctx.deadline.budget(ctx.config.timeouts.element)
     )
     if section is None:
         raise PublishError(
@@ -99,7 +91,7 @@ async def _open_cart_dropdown(ctx: PipelineContext) -> None:
         Cart.OPTION_CSS,
         has_text=Cart.TEXT_OPTION,
         exact=True,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(ErrorCode.CART_ATTACH_FAILED, "未找到「购物车」下拉选项")
 
@@ -114,7 +106,7 @@ async def _submit_product_link(ctx: PipelineContext) -> None:
         ctx.page,
         Cart.LINK_INPUT_CSS,
         ctx.config.cart_url,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(ErrorCode.CART_ATTACH_FAILED, "未找到商品链接输入框")
 
@@ -123,7 +115,7 @@ async def _submit_product_link(ctx: PipelineContext) -> None:
         Cart.ADD_LINK_BUTTON_CSS,
         has_text=Cart.TEXT_ADD_LINK,
         exact=True,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(ErrorCode.CART_ATTACH_FAILED, "未找到「添加链接」按钮")
 
@@ -160,7 +152,7 @@ async def _await_product_modal(ctx: PipelineContext) -> str:
                 return origin
         return None
 
-    result = await poll_until(probe, timeout=ctx.deadline.budget(MODAL_TIMEOUT))
+    result = await poll_until(probe, timeout=ctx.deadline.budget(ctx.config.timeouts.cart_modal))
 
     if diagnosed:
         raise diagnosed[0]
@@ -184,7 +176,7 @@ async def _fill_short_title(ctx: PipelineContext, origin_title: str) -> None:
         ctx.page,
         Cart.SHORT_TITLE_INPUT_CSS,
         short_title,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(ErrorCode.CART_ATTACH_FAILED, "未找到商品短标题输入框")
 
@@ -195,7 +187,7 @@ async def _fill_short_title(ctx: PipelineContext, origin_title: str) -> None:
         Cart.FINISH_EDIT_BUTTON_CSS,
         has_text=Cart.TEXT_FINISH_EDIT,
         exact=True,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(ErrorCode.CART_ATTACH_FAILED, "未找到「完成编辑」按钮")
 
@@ -211,7 +203,7 @@ async def _verify_attached(ctx: PipelineContext) -> None:
         Cart.ADDED_CARD_CSS,
         has_text=Cart.TEXT_ADDED,
         exact=False,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     )
     if card is None:
         raise PublishError(

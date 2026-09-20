@@ -18,10 +18,6 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.title")
-
-# 等待编辑器出现的超时（秒）
-EDITOR_TIMEOUT = 15.0
-
 # 每个话题标签输入后的停顿（秒）。
 # 输入 # 会触发页面的话题联想框，不留时间给它处理，后续字符会被吞掉或错位。
 TAG_INPUT_PAUSE = 0.3
@@ -52,7 +48,7 @@ async def run(ctx: PipelineContext) -> None:
     """
     config = ctx.config
     editor = await find_usable(
-        ctx.page, Editor.SLATE_CSS, timeout=ctx.deadline.budget(EDITOR_TIMEOUT)
+        ctx.page, Editor.SLATE_CSS, timeout=ctx.deadline.budget(ctx.config.timeouts.element)
     )
     if editor is None:
         raise PublishError(

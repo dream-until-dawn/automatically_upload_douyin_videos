@@ -15,11 +15,6 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.upload")
-
-# 等待上传组件出现的超时（秒）。页面首次加载可能较慢，给得比一般元素宽裕。
-FILE_INPUT_TIMEOUT = 30.0
-
-
 async def run(ctx: PipelineContext) -> None:
     """把本地视频文件投递到上传框。
 
@@ -39,7 +34,7 @@ async def run(ctx: PipelineContext) -> None:
     try:
         await file_input.wait_for(
             state="attached",
-            timeout=ctx.deadline.budget(FILE_INPUT_TIMEOUT) * 1000,
+            timeout=ctx.deadline.budget(ctx.config.timeouts.page_ready) * 1000,
         )
     except Exception as exc:
         raise PublishError(

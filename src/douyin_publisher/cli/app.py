@@ -22,7 +22,7 @@ from douyin_publisher.config.loader import (
 from douyin_publisher.core.errors import ErrorCode, PublishError
 from douyin_publisher.core.logging import get_logger, setup_logging
 from douyin_publisher.core.stages import Stage
-from douyin_publisher.pipeline.runner import TOTAL_TIMEOUT, run_pipeline
+from douyin_publisher.pipeline.runner import run_pipeline
 from douyin_publisher.system.processes import (
     close_browsers_by_user_data_dir,
     close_video_editor,
@@ -154,6 +154,10 @@ async def _run_publish(raw_config: str, finish) -> TaskResult:
     except PublishError as exc:
         return finish(exc.code, exc.stage or Stage.CONFIG, exc.message)
 
+    # 配置解析成功后立刻应用日志级别，让后续输出受控。
+    # 此前的解析错误日志仍按默认级别输出——那时还不知道调用方想要什么级别。
+    setup_logging(config.log_level.logging_level)
+
     ids = {"task_id": config.task_id, "douyin_id": config.douyin_id}
     logger.info(f"[启动] {config}")
 
@@ -165,9 +169,9 @@ async def _run_publish(raw_config: str, finish) -> TaskResult:
     # 三、启动浏览器并跑流程
     try:
         async with browser_session(config, user_data_dir) as browser_context:
-            result = await run_pipeline(
-                config, browser_context, total_timeout=TOTAL_TIMEOUT
-            )
+            # 不传 total_timeout：让 run_pipeline 从 config.timeouts.total 取，
+            # 否则调用方配置的总超时会被这里的固定值盖掉。
+            result = await run_pipeline(config, browser_context)
     except PublishError as exc:
         return finish(exc.code, exc.stage or Stage.LAUNCH, exc.message, **ids)
     except Exception as exc:

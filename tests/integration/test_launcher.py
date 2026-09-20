@@ -39,16 +39,18 @@ from douyin_publisher.config.models import TaskConfig
 from douyin_publisher.core.errors import ErrorCode, PublishError
 
 
-def make_config(exec_path: str) -> TaskConfig:
-    return TaskConfig(
-        exec_path=exec_path,
-        user_data_dir="unused",
-        task_id="t",
-        douyin_id="d",
-        video_path="unused",
-        cart_url="https://example.com/1",
-        headless=True,
-    )
+def make_config(exec_path: str, **extra: object) -> TaskConfig:
+    payload = {
+        "exec_path": exec_path,
+        "user_data_dir": "unused",
+        "task_id": "t",
+        "douyin_id": "d",
+        "video_path": "unused",
+        "cart_url": "https://example.com/1",
+        "headless": True,
+    }
+    payload.update(extra)
+    return TaskConfig(**payload)
 
 
 @pytest.fixture
@@ -212,3 +214,49 @@ async def test_会话被取消时仍关闭浏览器(user_data_dir: Path) -> None
     assert captured, "浏览器未成功启动，本条测试没有验证到清理"
     with pytest.raises(Exception):
         await captured[0].new_page()
+
+
+# ======================================================================
+# 调用方追加的浏览器参数
+# ======================================================================
+
+
+@requires_chrome
+async def test_附加参数真的传给了浏览器(user_data_dir: Path) -> None:
+    """断言参数「拼进了列表」是不够的——那只证明代码把它放进了数组。
+
+    这里用一个可观测的参数（自定义 User-Agent）真的启动浏览器，
+    再从页面里读回来，才能证明它确实抵达了浏览器进程。
+    """
+    exe = await chromium_path()
+    marker = "SmokeTestAgent/9.9"
+    config = make_config(exe, browser_args=[f"--user-agent={marker}"])
+
+    async with async_playwright() as playwright:
+        context = await launch_context(playwright, config, user_data_dir)
+        try:
+            page = context.pages[0] if context.pages else await context.new_page()
+            await page.goto("data:text/html,<title>ua</title>")
+            ua = await page.evaluate("() => navigator.userAgent")
+        finally:
+            await close_context(context)
+
+    assert marker in ua, f"附加参数未抵达浏览器，实际 UA：{ua}"
+
+
+@requires_chrome
+async def test_不配置附加参数时浏览器正常启动(user_data_dir: Path) -> None:
+    """反向配对：确认上一条的成功不是因为参数被忽略也能跑。"""
+    exe = await chromium_path()
+
+    async with async_playwright() as playwright:
+        context = await launch_context(playwright, make_config(exe), user_data_dir)
+        try:
+            page = context.pages[0] if context.pages else await context.new_page()
+            await page.goto("data:text/html,<title>ua</title>")
+            ua = await page.evaluate("() => navigator.userAgent")
+        finally:
+            await close_context(context)
+
+    assert "SmokeTestAgent" not in ua, "未配置附加参数，UA 却被改了"
+    assert "Chrome" in ua

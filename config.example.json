@@ -18,5 +18,23 @@
   "savePermission": "不允许",
   "selfDeclaration": "无需添加自主声明",
 
-  "headless": false
+  "headless": false,
+
+  "_运行时选项": "以下四项全部可选，删掉它们行为与默认完全一致。详见 docs/cli-protocol.md 第 3.3~3.6 节。",
+
+  "_timeouts说明": "各环节等待上限（秒）。只写想改的那几项即可，未写的保持默认。最常需要调整的是 upload——视频大或上行带宽窄时调大。",
+  "timeouts": {
+    "total": 600,
+    "upload": 300,
+    "publish": 120
+  },
+
+  "_browserArgs说明": "追加的 Chrome 启动参数，拼在内置参数之后。--user-data-dir 与 --remote-debugging-* 会被拒绝（它们由程序自身管理）。",
+  "browserArgs": [],
+
+  "_logLevel说明": "quiet（仅警告）/ normal（默认）/ debug（含元素查找细节）。批量调度时用 quiet 可大幅压低日志量。",
+  "logLevel": "normal",
+
+  "_skip说明": "要跳过的阶段。可跳过：title、setting、declaration、cart、cover。发布纯内容视频时填 [\"cart\"]。upload 与 publish 等必要环节不可跳过。",
+  "skip": []
 }

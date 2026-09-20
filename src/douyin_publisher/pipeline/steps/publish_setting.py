@@ -16,10 +16,6 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.setting")
-
-# 单个选项的等待超时（秒）
-OPTION_TIMEOUT = 10.0
-
 # 精确匹配的等待超时（秒）。它只是「优先尝试」，取值要短，
 # 否则每次回退都要先白等一轮完整超时。
 EXACT_MATCH_TIMEOUT = 3.0
@@ -79,7 +75,7 @@ async def _select_option(ctx: PipelineContext, label: str, group: str) -> None:
             PublishSetting.RADIO_CSS,
             has_text=label,
             exact=False,
-            timeout=ctx.deadline.budget(OPTION_TIMEOUT),
+            timeout=ctx.deadline.budget(ctx.config.timeouts.element),
         )
 
     if not clicked:
@@ -115,7 +111,7 @@ async def run(ctx: PipelineContext) -> None:
                 ctx.page,
                 PublishSetting.SCHEDULE_INPUT_CSS,
                 target,
-                timeout=ctx.deadline.budget(OPTION_TIMEOUT),
+                timeout=ctx.deadline.budget(ctx.config.timeouts.element),
             )
             if not filled:
                 raise PublishError(

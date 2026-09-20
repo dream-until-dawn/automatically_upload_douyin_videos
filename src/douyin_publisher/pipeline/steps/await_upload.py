@@ -14,18 +14,13 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.await_upload")
-
-# 等待上传完成的超时（秒）。上传耗时取决于文件大小与网络，给足 5 分钟。
-UPLOAD_TIMEOUT = 300.0
-
-
 async def run(ctx: PipelineContext) -> None:
     """阻塞直到收到上传成功事件。
 
     Raises:
         PublishError: UPLOAD_TIMEOUT —— 超时仍未收到任何上传结论。
     """
-    budget = ctx.deadline.budget(UPLOAD_TIMEOUT)
+    budget = ctx.deadline.budget(ctx.config.timeouts.upload)
     logger.info(f"[等待] 等待视频上传完成（最多 {budget:.0f}s）")
 
     # 用上下文管理器确保退订：不退订的话，后续事件会持续堆进这个已无人读取的
