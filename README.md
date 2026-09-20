@@ -207,7 +207,8 @@ uv run python -m douyin_publisher close-jianying
 ## 开发
 
 ```bash
-uv run pytest                      # 全部测试
+uv run pytest                      # 全部测试（串行约 10 分钟）
+uv run pytest -n 8                 # 并行，本机实测约 3.5 分钟
 uv run pytest -m "not integration" # 只跑单元测试（秒级）
 uv run pytest -m integration       # 只跑集成测试（需浏览器）
 ```
