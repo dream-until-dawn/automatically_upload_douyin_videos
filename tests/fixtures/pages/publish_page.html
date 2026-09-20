@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>模拟创作者发布页</title>
+<!--
+  模拟抖音创作者中心视频发布页。
+
+  它复刻的是真实页面的 **结构特征与交互时序**，而不是外观：
+  类名、属性、层级都按 src/douyin_publisher/browser/selectors.py 中登记的
+  选择器来构造，因此生产代码无需任何改动就能驱动这个页面。
+
+  「模拟页与真实页结构假设一致」这一点由
+  tests/integration/test_selectors_match_mock.py 强制校验——
+  若有人改了选择器却忘了同步这里，那条测试会立刻变红。
+
+  ## 可编程的失败注入
+
+  通过 URL 查询参数控制页面行为，从而在毫秒级、零副作用的前提下复现各类异常：
+
+    scenario      场景名，决定弹出什么轻提示、挂车走哪条分支
+    uploadDelay   投递文件后多久弹出上传结果提示（毫秒）
+    publishDelay  点击发布后多久弹出发布结果提示（毫秒）
+    missing       要移除的元素，逗号分隔，用于模拟页面改版导致的元素缺失
+
+  例：?scenario=upload_failure&uploadDelay=200
+      ?missing=editor
+-->
+<style>
+  body { font-family: sans-serif; margin: 24px; max-width: 760px; }
+  section { border: 1px solid #ddd; padding: 12px; margin-bottom: 16px; }
+  h3 { margin: 0 0 8px; font-size: 14px; color: #666; }
+  /* 真实页面的文件输入框是隐藏的，这里保持一致，避免测试依赖不真实的前提 */
+  input[name="upload-btn"] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .hidden { display: none; }
+  .semi-select { border: 1px solid #aaa; padding: 6px; cursor: pointer; width: 200px; }
+  .select-dropdown-option-video { border: 1px solid #ccc; padding: 6px; cursor: pointer; }
+  label { display: block; padding: 4px; cursor: pointer; }
+  .disabled { opacity: .4; pointer-events: none; }
+  .modal { border: 2px solid #333; padding: 12px; margin-top: 8px; background: #fafafa; }
+  .semi-toast-content {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 8px 16px; border-radius: 4px;
+  }
+  [contenteditable] { border: 1px solid #aaa; min-height: 40px; padding: 6px; }
+</style>
+</head>
+<body>
+
+<!-- ============ 视频上传 ============ -->
+<section id="section-upload">
+  <h3>视频上传</h3>
+  <input type="file" name="upload-btn" accept=".mp4,video/mp4" />
+  <div id="upload-hint">未选择文件</div>
+</section>
+
+<!-- ============ 标题与话题标签（Slate 富文本） ============ -->
+<section id="section-editor">
+  <h3>作品描述</h3>
+  <div contenteditable="true" data-slate-editor="true" id="editor"></div>
+</section>
+
+<!-- ============ 挂载购物车 ============ -->
+<section id="section-cart">
+  <h3>扩展信息</h3>
+  <div class="form-item">
+    <span>添加标签</span>
+    <div class="semi-select" id="cart-select">请选择</div>
+  </div>
+
+  <div id="cart-dropdown" class="hidden">
+    <div class="select-dropdown-option-video">位置</div>
+    <div class="select-dropdown-option-video">购物车</div>
+  </div>
+
+  <div id="cart-link-area" class="hidden">
+    <input type="text" placeholder="请粘贴商品链接" id="cart-link-input" />
+    <span class="cart-mybtn-a1b2c3" id="cart-add-link">添加链接</span>
+  </div>
+
+  <div id="cart-modal" class="modal hidden">
+    <div class="modal-title-x9y8z7" id="cart-modal-title">编辑商品</div>
+    <div class="item-origin-title-p5q6r7" id="cart-origin-title"></div>
+    <input type="text" placeholder="请输入商品短标题" id="cart-short-title" />
+    <button class="button-m3n4o5" id="cart-finish-edit">完成编辑</button>
+  </div>
+
+  <div id="cart-added" class="cart-goodlist-wrapper hidden">已添加商品 1 件</div>
+</section>
+
+<!-- ============ 发布设置 ============ -->
+<section id="section-setting">
+  <h3>发布设置</h3>
+  <div id="setting-time">
+    <label class="semi-radio">立即发布</label>
+    <label class="semi-radio">定时发布</label>
+    <input class="semi-input" placeholder="请选择日期和时间" id="schedule-input" />
+  </div>
+  <div id="setting-visibility">
+    <label class="semi-radio">公开</label>
+    <label class="semi-radio">好友可见</label>
+    <label class="semi-radio">仅自己可见</label>
+  </div>
+  <div id="setting-save">
+    <label class="semi-radio">允许</label>
+    <label class="semi-radio">不允许</label>
+  </div>
+</section>
+
+<!-- ============ 自主声明 ============ -->
+<section id="section-declaration">
+  <div class="declaration-wrapper">
+    <span>自主声明</span>
+    <div class="selectBox" id="declaration-select">请选择自主声明</div>
+  </div>
+  <div id="declaration-modal" class="modal hidden">
+    <label class="semi-radio">无需添加自主声明</label>
+    <label class="semi-radio">内容为创作者原创</label>
+    <label class="semi-radio">内容为品牌合作</label>
+    <button class="semi-button disabled" id="declaration-confirm">确定</button>
+  </div>
+</section>
+
+<!-- ============ 封面 ============ -->
+<section id="section-cover">
+  <h3>封面</h3>
+  <div class="filter-c1d2e3" id="cover-entry">
+    <div>选择封面</div>
+  </div>
+  <div id="dy-creator-content-modal-body" class="modal hidden">
+    <button id="cover-horizontal"><span class="semi-button-content">设置横封面</span></button>
+    <button id="cover-done" class="hidden"><span class="semi-button-content">完成</span></button>
+  </div>
+</section>
+
+<!-- ============ 发布 ============ -->
+<section id="section-publish">
+  <button id="publish-btn">发布</button>
+</section>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------- 场景参数 ----------------
+  var params = new URLSearchParams(location.search);
+  var scenario = params.get("scenario") || "success";
+  var uploadDelay = parseInt(params.get("uploadDelay") || "300", 10);
+  var publishDelay = parseInt(params.get("publishDelay") || "200", 10);
+  var missing = (params.get("missing") || "").split(",").filter(Boolean);
+
+  // 把场景暴露出来，便于测试失败时快速看清页面当时处于什么配置
+  window.__mockScenario = { scenario: scenario, uploadDelay: uploadDelay,
+                            publishDelay: publishDelay, missing: missing };
+
+  // ---------------- 元素缺失注入 ----------------
+  // 模拟页面改版导致某个关键元素不复存在，用于验证各步骤的失败分支。
+  var REMOVABLE = {
+    upload:      "#section-upload input[name='upload-btn']",
+    editor:      "#editor",
+    cart:        "#section-cart .form-item",
+    setting:     "#setting-time",
+    visibility:  "#setting-visibility",
+    declaration: "#section-declaration .declaration-wrapper",
+    cover:       "#cover-entry",
+    publish:     "#publish-btn"
+  };
+  missing.forEach(function (key) {
+    var selector = REMOVABLE[key];
+    if (!selector) return;
+    document.querySelectorAll(selector).forEach(function (el) { el.remove(); });
+  });
+
+  // ---------------- 轻提示 ----------------
+  function showToast(text) {
+    var el = document.createElement("div");
+    el.className = "semi-toast-content";
+    document.body.appendChild(el);
+
+    // 刻意让文本延迟一拍才写入：真实页面就是这样，
+    // 这能验证监听器的「文本延迟渲染」重试逻辑确实有效。
+    setTimeout(function () { el.textContent = text; }, 50);
+    // 提示会自动消失，错过就真的错过了——这正是必须用事件监听而非轮询的原因
+    setTimeout(function () { el.remove(); }, 3000);
+  }
+  window.__showToast = showToast;  // 便于测试直接触发
+
+  function show(el) { if (el) el.classList.remove("hidden"); }
+  function hide(el) { if (el) el.classList.add("hidden"); }
+  function on(id, handler) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("click", handler);
+    return el;
+  }
+
+  // ---------------- 上传 ----------------
+  var fileInput = document.querySelector("input[name='upload-btn']");
+  if (fileInput) {
+    fileInput.addEventListener("change", function () {
+      document.getElementById("upload-hint").textContent = "已选择文件，上传中...";
+
+      // 该场景下永远不给结论，用于验证上传超时分支
+      if (scenario === "upload_silent") return;
+
+      setTimeout(function () {
+        if (scenario === "upload_failure") {
+          showToast("视频上传失败，请稍后重试");
+        } else if (scenario === "service_error") {
+          showToast("服务开小差了，请稍后重试");
+        } else if (scenario === "product_not_supported") {
+          showToast("该商品暂不支持在直播/短视频推广");
+        } else {
+          showToast("视频上传成功");
+        }
+      }, uploadDelay);
+    });
+  }
+
+  // ---------------- 购物车 ----------------
+  on("cart-select", function () { show(document.getElementById("cart-dropdown")); });
+
+  document.querySelectorAll(".select-dropdown-option-video").forEach(function (option) {
+    option.addEventListener("click", function () {
+      if (option.textContent.trim() !== "购物车") return;
+      hide(document.getElementById("cart-dropdown"));
+      show(document.getElementById("cart-link-area"));
+    });
+  });
+
+  on("cart-add-link", function () {
+    var modal = document.getElementById("cart-modal");
+    var title = document.getElementById("cart-modal-title");
+    var origin = document.getElementById("cart-origin-title");
+
+    if (scenario === "cart_limit") {
+      title.textContent = "无法添加购物车";
+      origin.textContent = "";
+    } else if (scenario === "cart_not_found") {
+      title.textContent = "未搜索到相关商品";
+      origin.textContent = "";
+    } else if (scenario === "cart_no_origin_title") {
+      // 弹窗出现但读不到商品原标题，用于验证一般性挂车失败分支
+      title.textContent = "编辑商品";
+      origin.textContent = "";
+    } else {
+      title.textContent = "编辑商品";
+      origin.textContent = "测试商品原标题很长很长很长";
+    }
+    show(modal);
+  });
+
+  on("cart-finish-edit", function () {
+    hide(document.getElementById("cart-modal"));
+    // 该场景下完成编辑后卡片始终不出现，模拟挂车静默失败
+    if (scenario === "cart_no_card") return;
+    show(document.getElementById("cart-added"));
+  });
+
+  // ---------------- 自主声明 ----------------
+  on("declaration-select", function () {
+    show(document.getElementById("declaration-modal"));
+  });
+
+  document.querySelectorAll("#declaration-modal label").forEach(function (label) {
+    label.addEventListener("click", function () {
+      // 选中之前「确定」是禁用态——用类名表达禁用，而非 disabled 属性。
+      // 这正是 is_usable 必须同时检查类名的原因。
+      var confirm = document.getElementById("declaration-confirm");
+      if (confirm) confirm.classList.remove("disabled");
+    });
+  });
+
+  on("declaration-confirm", function () {
+    hide(document.getElementById("declaration-modal"));
+    document.getElementById("declaration-select").textContent = "已设置自主声明";
+  });
+
+  // ---------------- 封面 ----------------
+  on("cover-entry", function () {
+    // 该场景下点击封面入口后弹窗始终不出现
+    if (scenario === "cover_no_modal") return;
+    show(document.getElementById("dy-creator-content-modal-body"));
+  });
+
+  on("cover-horizontal", function () {
+    show(document.getElementById("cover-done"));
+  });
+
+  on("cover-done", function () {
+    hide(document.getElementById("dy-creator-content-modal-body"));
+  });
+
+  // ---------------- 发布 ----------------
+  on("publish-btn", function () {
+    // 该场景下点击发布后永不给结论，用于验证整体超时分支
+    if (scenario === "publish_silent") return;
+
+    setTimeout(function () {
+      if (scenario === "publish_failure") {
+        showToast("发布失败，请检查内容");
+      } else if (scenario === "publish_service_error") {
+        showToast("服务异常，请稍后重试");
+      } else {
+        showToast("作品发布成功");
+      }
+    }, publishDelay);
+  });
+})();
+</script>
+</body>
+</html>
