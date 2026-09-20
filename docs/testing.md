@@ -117,3 +117,28 @@ uv run pytest -m integration       # 仅集成测试（需浏览器）
 
 集成测试使用 Playwright 自带的 Chromium，与生产环境指向本机 Chrome 的行为一致
 （同为 Chromium 内核，DOM 交互语义无差异）。
+
+例外是 `tests/integration/test_launcher.py`：它必须显式传入可执行文件路径，
+而自带 Chromium 的路径不能这样用（见 [探针结论](./probe-results.md) 的工程约束 3），
+因此改用本机 Chrome，缺失时跳过而非失败。
+
+## 6. 真实环境冒烟
+
+```bash
+uv run python scripts/smoke_real.py config.json            # 探测模式
+uv run python scripts/smoke_real.py config.json --dry-run  # 演练模式
+```
+
+| 模式 | 行为 | 副作用 |
+| --- | --- | --- |
+| 探测（默认） | 打开发布页，逐个检查选择器能否命中 | 无 |
+| 演练 | 执行上传、标题、挂车、封面等全部步骤 | 账号下留下一条草稿 |
+
+两种模式都不会点击发布。发布步骤是 **从执行序列里排除掉的**，
+而非「跑到那里再判断」——后者留有意外发布的可能，而真实发布不可撤销。
+
+该性质由 `tests/unit/test_dry_run_steps.py` 强制校验，并做过变异验证：
+把 `DRY_RUN_STEPS` 改回完整序列后，5 条测试变红，
+日志中出现「哨兵命中 publish_failure」——证明发布按钮确实被点了。
+
+冒烟脚本不进自动化测试：它需要真实账号，且结果依赖线上页面的当前状态。

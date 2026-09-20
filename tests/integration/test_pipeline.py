@@ -98,15 +98,22 @@ async def run_with(
     browser_context: BrowserContext,
     *,
     total_timeout: float = TEST_TOTAL_TIMEOUT,
+    steps: tuple | None = None,
     **page_params: str | int,
 ) -> tuple[PipelineResult, float]:
-    """跑一次流程，返回结论与耗时。"""
+    """跑一次流程，返回结论与耗时。
+
+    Args:
+        steps: 自定义步骤序列；留空则使用完整流程。
+    """
+    extra = {"steps": steps} if steps is not None else {}
     started = time.monotonic()
     result = await run_pipeline(
         config,
         browser_context,
         total_timeout=total_timeout,
         page_url=mock_page_url(**page_params),
+        **extra,
     )
     return result, time.monotonic() - started
 
@@ -388,6 +395,28 @@ async def test_流程不会抛异常只会返回结论(
     result, _ = await run_with(config, browser_context)
     assert isinstance(result, PipelineResult)
     assert not result.ok
+
+
+async def test_可注入自定义步骤序列(
+    task_config: TaskConfig, browser_context: BrowserContext
+) -> None:
+    """冒烟脚本靠这个能力做到「只验证不发布」。
+
+    用 DRY_RUN_STEPS 跑完整页面交互，流程应当成功结束，
+    且页面上不会出现任何发布结果——因为发布按钮根本没被点过。
+    """
+    from douyin_publisher.pipeline.runner import DRY_RUN_STEPS
+
+    result, _ = await run_with(
+        task_config, browser_context, steps=DRY_RUN_STEPS, publish="failure"
+    )
+
+    # publish=failure 意味着「一旦点了发布就会失败」。
+    # 结果为成功，正说明发布按钮确实没被点击。
+    assert result.code is ErrorCode.SUCCESS, (
+        f"演练流程未成功：{result}"
+    )
+    assert result.stage is Stage.DONE
 
 
 async def test_步骤顺序中上传排在最前(

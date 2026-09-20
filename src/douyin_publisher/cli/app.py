@@ -84,6 +84,11 @@ async def run(argv: list[str]) -> TaskResult:
     started = time.monotonic()
 
     def finish(code: ErrorCode, stage: Stage, message: str, **ids: str) -> TaskResult:
+        """构造结果并自动补上耗时。
+
+        各条返回路径都经由它，耗时统计因此不会漏填——
+        失败路径上的耗时同样有价值，上游据此统计各类失败的成本。
+        """
         return TaskResult(
             code=code,
             stage=stage,

@@ -77,6 +77,17 @@ STEPS: tuple[Step, ...] = (
 )
 
 
+# 不含任何发布动作的步骤序列，供真实环境冒烟脚本使用。
+#
+# 用「从完整流程中排除」而非「跑到发布前再判断」：前者在结构上就不可能发布——
+# 发布步骤根本不在序列里，任何意外都不会让它被执行到。
+# 该性质由 tests/unit/test_dry_run_steps.py 强制校验，
+# 因为它一旦出错，后果是在用户账号下产生真实的发布。
+DRY_RUN_STEPS: tuple[Step, ...] = tuple(
+    step for step in STEPS if step.stage not in (Stage.PUBLISH, Stage.AWAIT_PUBLISH)
+)
+
+
 @dataclass(frozen=True, slots=True)
 class PipelineResult:
     """流程的最终结论。"""
@@ -87,6 +98,7 @@ class PipelineResult:
 
     @property
     def ok(self) -> bool:
+        """是否发布成功。"""
         return self.code.ok
 
     def __str__(self) -> str:
@@ -104,12 +116,16 @@ class _StageTracker:
         self.current = initial
 
 
-async def _run_steps(ctx: PipelineContext, tracker: _StageTracker) -> PipelineResult:
-    """按顺序执行全部步骤。
+async def _run_steps(
+    ctx: PipelineContext,
+    tracker: _StageTracker,
+    steps: tuple[Step, ...] = STEPS,
+) -> PipelineResult:
+    """按顺序执行给定的步骤。
 
     任何步骤失败都立即返回，不再执行后续步骤。
     """
-    for step in STEPS:
+    for step in steps:
         tracker.current = step.stage
         logger.info(f"[流程] ===== {step.title} =====")
 
@@ -158,6 +174,7 @@ async def run_pipeline(
     *,
     total_timeout: float = TOTAL_TIMEOUT,
     page_url: str = PUBLISH_PAGE_URL,
+    steps: tuple[Step, ...] = STEPS,
 ) -> PipelineResult:
     """执行完整的发布流程。
 
@@ -166,6 +183,9 @@ async def run_pipeline(
         browser_context: 已启动的浏览器上下文。
         total_timeout: 总时长上限（秒）。
         page_url: 发布页地址，测试时指向本地模拟页。
+        steps: 要执行的步骤序列。默认是完整流程；
+            真实环境的冒烟脚本会传入一个去掉发布动作的子集，
+            从而在不产生真实发布的前提下验证前面所有步骤。
 
     Returns:
         流程结论。本函数不抛异常，所有失败都以结论的形式返回——
@@ -196,7 +216,7 @@ async def run_pipeline(
     # 三、主流程与哨兵竞速
     logger.info(f"[流程] 开始执行，总时长上限 {total_timeout:.0f}s")
     result, _ = await wait_for_first(
-        _run_steps(ctx, tracker),
+        _run_steps(ctx, tracker, steps),
         _run_sentinel(ctx, tracker),
         timeout=total_timeout,
     )
