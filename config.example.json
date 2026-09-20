@@ -1,0 +1,22 @@
+{
+  "_说明": "任务配置模板。复制为 config.json 并按实际情况填写，config.json 已被 .gitignore 忽略。字段含义见 docs/cli-protocol.md。",
+
+  "execPath": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "userDataDir": "请填写已登录抖音的 Chrome 用户数据目录",
+  "taskId": "1",
+  "douyinId": "1",
+  "videoPath": "请填写待发布视频的绝对路径",
+  "cartUrl": "请填写商品链接",
+
+  "title": "视频标题",
+  "desc": "标签一,标签二,标签三",
+  "cartTitel": "",
+
+  "publishTimeMode": "立即发布",
+  "publishTime": "24",
+  "whoCanSee": "仅自己可见",
+  "savePermission": "不允许",
+  "selfDeclaration": "无需添加自主声明",
+
+  "headless": false
+}

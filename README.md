@@ -167,6 +167,8 @@ uv run pytest -m integration       # 只跑集成测试（需浏览器）
 因此需要一个连真实账号的脚本来回答那个问题：
 
 ```bash
+cp config.example.json config.json   # 按实际情况填写，config.json 不入库
+
 uv run python scripts/smoke_real.py config.json            # 探测：只检查选择器，零副作用
 uv run python scripts/smoke_real.py config.json --dry-run  # 演练：执行到点击发布前停住
 ```
