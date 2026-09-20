@@ -6,7 +6,8 @@
   "taskId": "1",
   "douyinId": "1",
   "videoPath": "请填写待发布视频的绝对路径",
-  "cartUrl": "请填写商品链接",
+  "_cartUrl说明": "留空表示发布不带商品的纯内容视频，挂车步骤会自动跳过。",
+  "cartUrl": "请填写商品链接，或留空发纯内容视频",
 
   "title": "视频标题",
   "desc": "标签一,标签二,标签三",
@@ -35,6 +36,18 @@
   "_logLevel说明": "quiet（仅警告）/ normal（默认）/ debug（含元素查找细节）。批量调度时用 quiet 可大幅压低日志量。",
   "logLevel": "normal",
 
-  "_skip说明": "要跳过的阶段。可跳过：title、setting、declaration、cart、cover。发布纯内容视频时填 [\"cart\"]。upload 与 publish 等必要环节不可跳过。",
-  "skip": []
+  "_skip说明": "要跳过的阶段。可跳过：title、setting、declaration、cart、cover。upload 与 publish 等必要环节不可跳过。发布纯内容视频只需把 cartUrl 留空，无需在这里填 cart。",
+  "skip": [],
+
+  "_screenshot说明": "失败时自动截取页面现场，默认开启。dir 留空则存到系统临时目录。截图路径会出现在结果 JSON 的 screenshot 字段中。注意截图可能含账号信息。",
+  "screenshot": {
+    "onFailure": true,
+    "dir": ""
+  },
+
+  "_progress说明": "进度回报，默认关闭。开启后 stdout 会变成多行 JSON（每行一个，结果永远在最后一行），若上游是整段解析 stdout 则不要开启。heartbeat 是长等待期间的心跳间隔（秒），用来区分「正在上传」和「已经卡死」，填 0 则只报步骤不发心跳。",
+  "progress": {
+    "enabled": false,
+    "heartbeat": 15
+  }
 }

@@ -83,7 +83,13 @@ async def run(argv: list[str]) -> TaskResult:
     """
     started = time.monotonic()
 
-    def finish(code: ErrorCode, stage: Stage, message: str, **ids: str) -> TaskResult:
+    def finish(
+        code: ErrorCode,
+        stage: Stage,
+        message: str,
+        screenshot: str | None = None,
+        **ids: str,
+    ) -> TaskResult:
         """构造结果并自动补上耗时。
 
         各条返回路径都经由它，耗时统计因此不会漏填——
@@ -94,6 +100,7 @@ async def run(argv: list[str]) -> TaskResult:
             stage=stage,
             message=message,
             elapsed_ms=int((time.monotonic() - started) * 1000),
+            screenshot=screenshot,
             **ids,
         )
 
@@ -180,7 +187,9 @@ async def _run_publish(raw_config: str, finish) -> TaskResult:
             ErrorCode.UNEXPECTED, Stage.LAUNCH, f"{type(exc).__name__}: {exc}", **ids
         )
 
-    return finish(result.code, result.stage, result.message, **ids)
+    return finish(
+        result.code, result.stage, result.message, result.screenshot, **ids
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

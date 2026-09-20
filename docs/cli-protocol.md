@@ -47,7 +47,7 @@ python -m douyin_publisher <子命令> <参数>
 | `taskId` | string | ✅ | 上游任务 ID，仅用于日志与结果回传 |
 | `douyinId` | string | ✅ | 抖音账号标识，仅用于日志与结果回传 |
 | `videoPath` | string | ✅ | 待发布视频的本地绝对路径 |
-| `cartUrl` | string | ✅ | 商品（购物车）链接 |
+| `cartUrl` | string | ❌ | 商品链接。**留空表示发布纯内容视频**，挂车步骤会被自动跳过 |
 | `title` | string | ❌ | 视频标题 |
 | `desc` | string | ❌ | 话题标签，英文逗号分隔，程序自动加 `#` |
 | `cartTitel` | string | ❌ | 商品短标题；留空则自动截取商品原标题前 10 字 |
@@ -60,7 +60,9 @@ python -m douyin_publisher <子命令> <参数>
 | `timeouts` | object | ❌ | 各环节等待上限，见 3.4 |
 | `browserArgs` | string[] | ❌ | 追加的 Chrome 启动参数，见 3.5 |
 | `logLevel` | string | ❌ | `quiet` / `normal`（默认）/ `debug` |
-| `skip` | string[] | ❌ | 要跳过的阶段，见 3.6 |
+| `skip` | string[] | ❌ | 要跳过的阶段，见 3.7 |
+| `screenshot` | object | ❌ | 失败现场截图，见 3.8 |
+| `progress` | object | ❌ | 进度回报，**默认关闭**，见 3.9 |
 
 > `cartTitel` 沿用上游既有拼写，不做更名，以保证对接零改动。
 
@@ -122,7 +124,22 @@ python -m douyin_publisher <子命令> <参数>
 | `--remote-debugging-port` / `--remote-debugging-pipe` | 程序靠它与浏览器通信，被覆盖会直接失去控制。 |
 | 不以 `--` 开头的项 | 大概率是拼装错误。 |
 
-### 3.6 skip：跳过非必要步骤
+### 3.6 纯内容视频
+
+`cartUrl` 留空（或只填空白）即表示发布不带商品的视频，挂车步骤自动跳过。
+日志中会明确打出一行：
+
+```
+[流程] 未配置商品链接，跳过挂车（按纯内容视频处理）
+```
+
+这条日志是刻意保留的：自动行为不该静默发生。
+若本想挂车却漏填了链接，任务会「成功」但商品没挂上，
+而这行日志是事后唯一能发现此事的线索。
+
+效果等同于 `"skip": ["cart"]`，两者同时配置也不冲突。
+
+### 3.7 skip：跳过非必要步骤
 
 ```json
 "skip": ["cart", "cover"]
@@ -138,7 +155,56 @@ python -m douyin_publisher <子命令> <参数>
 > 若需要「跑完流程但不发布」，那是冒烟脚本演练模式的职责，
 > 不要试图用 `skip` 去掉发布步骤。
 
-### 3.7 示例
+### 3.8 screenshot：失败现场截图
+
+```json
+"screenshot": { "onFailure": true, "dir": "D:/logs/shots" }
+```
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `onFailure` | `true` | 失败时是否自动截图 |
+| `dir` | `""` | 存放目录，留空则用系统临时目录下的 `douyin_publisher_shots` |
+
+**默认开启**的理由：这类信息的价值几乎全在事后。
+等出了问题才想起来打开开关，那一次的现场已经没有了。
+
+截图路径会出现在结果 JSON 的 `screenshot` 字段中（成功时为 `null`）。
+文件名形如 `20260920-173144_task-42_cover.png`，含时间、任务 ID 与失败阶段，
+不必打开就能定位是哪个任务卡在哪一步。
+
+三点说明：
+
+- 截图**不会影响结果**。目录不可写、页面已关闭、磁盘满等情况一律降级为警告——
+  此时已经有一个明确的失败原因了，不该让截图问题把它盖掉。
+- 只在失败时截，成功路径不产生文件。
+- 截图可能包含账号信息，注意存放目录的权限与清理策略。
+
+### 3.9 progress：进度回报
+
+```json
+"progress": { "enabled": true, "heartbeat": 15 }
+```
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `enabled` | `false` | 是否输出进度行 |
+| `heartbeat` | `15` | 长等待期间的心跳间隔（秒），`0` 表示只报步骤、不发心跳 |
+
+**默认关闭**，这与截图选项的取舍相反，因为两者影响面不同：
+
+| | 对输出的影响 | 默认 |
+| --- | --- | --- |
+| 失败截图 | 给结果 JSON **增加一个字段** | 开启 |
+| 进度回报 | 让 stdout 从一行变成 **多行** | 关闭 |
+
+增字段是安全的，改变行数不是。若上游是「读 stdout 最后一行」，开启进度不受影响；
+若是「整段 json.loads」，多出任何一行都会直接失败。
+在不确定上游解析方式时，默认关闭是唯一不会悄悄弄坏对接的选择。
+
+开启后的输出见 4.3。
+
+### 3.10 示例
 
 ```json
 {
@@ -175,6 +241,7 @@ python -m douyin_publisher <子命令> <参数>
 ```json
 {
   "schema": 1,
+  "type": "result",
   "ok": false,
   "code": 21,
   "name": "CART_LIMIT_REACHED",
@@ -184,13 +251,15 @@ python -m douyin_publisher <子命令> <参数>
   "message": "无法添加购物车（已达挂车上限）",
   "taskId": "1",
   "douyinId": "1",
-  "elapsedMs": 8423
+  "elapsedMs": 8423,
+  "screenshot": "C:/Temp/douyin_publisher_shots/20260920-173144_1_cart.png"
 }
 ```
 
 | 字段 | 说明 |
 | --- | --- |
 | `schema` | 结果结构版本号，当前为 `1`。结构发生破坏性变化时递增。 |
+| `type` | 固定为 `result`，用于与进度行区分（见 4.3） |
 | `ok` | 是否成功，等价于 `code == 0` |
 | `code` | 退出码，与进程退出码完全一致 |
 | `name` | 错误码常量名 |
@@ -200,8 +269,38 @@ python -m douyin_publisher <子命令> <参数>
 | `message` | 中文描述 |
 | `taskId` / `douyinId` | 原样回传，便于上游对账 |
 | `elapsedMs` | 本次执行耗时（毫秒） |
+| `screenshot` | 失败现场截图的路径；成功或未启用时为 `null` |
 
-### 4.3 兼容性承诺
+### 4.3 开启进度回报后的输出
+
+stdout 变为多行，每行一个完整 JSON，用 `type` 区分。
+**结果永远是最后一行**，「读最后一行」的解析方式始终成立：
+
+```
+{"schema":1,"type":"progress","kind":"step","stage":"upload","title":"投递视频","step":1,"total":9,"elapsedMs":420}
+{"schema":1,"type":"progress","kind":"heartbeat","stage":"await_upload","title":"等待上传完成","step":6,"total":9,"elapsedMs":23100}
+{"schema":1,"type":"result","ok":true,"code":0,...}
+```
+
+进度行字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `kind` | `step`（步骤切换）或 `heartbeat`（长等待期间的存活信号） |
+| `stage` | 当前阶段 |
+| `title` | 步骤中文名 |
+| `step` / `total` | 第几步 / 共几步。跳过的步骤不计入 `total` |
+| `elapsedMs` | 从流程开始至今的耗时 |
+
+两点说明：
+
+- **进度按步骤而非百分比**。上传百分比要从页面元素里抠，页面一改版就不准了，
+  而且不会报错、只会安静地给出错误数字——一个会静默说谎的进度条比没有更糟，
+  因为调度方会基于它做判断。步骤级进度来自流程定义本身，不受页面改版影响。
+- **心跳是用来回答「卡死还是在跑」的**。只在步骤切换时报进度的话，
+  等上传的那一分多钟里依然一片寂静，与卡死无法区分。
+
+### 4.4 兼容性承诺
 
 - 进程退出码语义与既有约定完全一致，上游即使完全忽略 stdout 也能正常工作。
 - JSON 结果为 **增量能力**，只增字段不删字段；破坏性变化会递增 `schema`。

@@ -210,3 +210,61 @@ def test_跳过后的步骤序列仍保持原有顺序() -> None:
 
     positions = [full_order.index(stage) for stage in remaining]
     assert positions == sorted(positions)
+
+
+# ======================================================================
+# 纯内容视频：不配置商品链接即自动跳过挂车
+# ======================================================================
+
+
+async def test_不配置商品链接时自动跳过挂车(
+    tmp_path: Path, browser_context: BrowserContext
+) -> None:
+    """同样用「挂车必定失败」来证明它真的没执行。
+
+    若只断言「不填链接也能成功」，挂车本来也可能成功，测不出区别。
+    """
+    config = make_config(tmp_path, cart_url="")
+    result = await run_with(config, browser_context, cart="limit")
+
+    assert result.code is ErrorCode.SUCCESS, (
+        f"未配置商品链接时仍尝试挂车：{result}"
+    )
+    assert result.stage is Stage.DONE
+
+
+async def test_配置了商品链接则照常挂车(
+    tmp_path: Path, browser_context: BrowserContext
+) -> None:
+    """反向配对：确认上一条不是因为挂车被无条件跳过。"""
+    config = make_config(tmp_path, cart_url="https://example.com/item?id=1")
+    result = await run_with(config, browser_context, cart="limit")
+
+    assert result.code is ErrorCode.CART_LIMIT_REACHED, (
+        f"配置了商品链接却没挂车：{result}"
+    )
+
+
+async def test_纯内容视频其余步骤照常执行(
+    tmp_path: Path, browser_context: BrowserContext
+) -> None:
+    """跳过挂车不能顺带少做别的事。"""
+    config = make_config(tmp_path, cart_url="", title="纯内容视频", desc="标签乙")
+    result = await run_with(config, browser_context)
+    assert result.code is ErrorCode.SUCCESS
+
+    page = browser_context.pages[0]
+    content = await page.locator("#editor").inner_text()
+    assert "纯内容视频" in content
+    assert "#标签乙" in content
+    assert not await page.locator("#cart-added").is_visible(), "不该出现商品卡片"
+
+
+async def test_空白商品链接等同于不配置(
+    tmp_path: Path, browser_context: BrowserContext
+) -> None:
+    """上游传个空串是常见情形，不该被当成「要挂车但链接是空的」。"""
+    config = make_config(tmp_path, cart_url="   ")
+    result = await run_with(config, browser_context, cart="limit")
+
+    assert result.code is ErrorCode.SUCCESS

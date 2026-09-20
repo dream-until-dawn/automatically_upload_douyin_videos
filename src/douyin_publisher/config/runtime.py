@@ -65,6 +65,42 @@ class Timeouts(BaseModel):
     publish: float = Field(120.0, gt=0, description="等待发布结果")
 
 
+class ScreenshotOptions(BaseModel):
+    """失败现场截图。
+
+    默认开启。理由是这类信息的价值几乎全在「事后」——
+    等到出了问题才想起来打开开关，那一次的现场已经没有了。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    on_failure: bool = Field(
+        True, alias="onFailure", description="失败时是否自动截图"
+    )
+    dir: str = Field("", description="存放目录，留空则用系统临时目录")
+
+
+class ProgressOptions(BaseModel):
+    """进度回报。
+
+    **默认关闭**，与截图选项相反。两者影响面不同：
+    截图只给结果 JSON 增加一个字段，而进度会让 stdout 从一行变成多行。
+    增字段是安全的，改变行数不是——在不确定上游解析方式的前提下，
+    默认关闭是唯一不会悄悄弄坏既有对接的选择。
+
+    见 [ADR-0004](../../../docs/adr/0004-progress-reporting.md)。
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(False, description="是否输出进度行")
+    heartbeat: float = Field(
+        15.0,
+        ge=0,
+        description="长等待期间的心跳间隔（秒），0 表示不发心跳",
+    )
+
+
 # ----------------------------------------------------------------------
 # 浏览器启动参数
 # ----------------------------------------------------------------------

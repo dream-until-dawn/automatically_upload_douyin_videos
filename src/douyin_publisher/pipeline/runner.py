@@ -25,10 +25,12 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from playwright.async_api import BrowserContext, Page
 
+from douyin_publisher.browser.screenshot import capture_failure
+from douyin_publisher.cli.progress import ProgressReporter
 from douyin_publisher.browser.selectors import PUBLISH_PAGE_URL
 from douyin_publisher.browser.toast import install_toast_listener
 from douyin_publisher.config.models import TaskConfig
@@ -95,6 +97,7 @@ class PipelineResult:
     code: ErrorCode
     stage: Stage
     message: str
+    screenshot: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -120,14 +123,17 @@ async def _run_steps(
     ctx: PipelineContext,
     tracker: _StageTracker,
     steps: tuple[Step, ...] = STEPS,
+    reporter: ProgressReporter | None = None,
 ) -> PipelineResult:
     """按顺序执行给定的步骤。
 
     任何步骤失败都立即返回，不再执行后续步骤。
     """
-    for step in steps:
+    for index, step in enumerate(steps, start=1):
         tracker.current = step.stage
         logger.info(f"[流程] ===== {step.title} =====")
+        if reporter is not None:
+            reporter.enter_step(step.stage, step.title, index)
 
         try:
             await step.run(ctx)
@@ -148,6 +154,18 @@ async def _run_steps(
             )
 
     return PipelineResult(ErrorCode.SUCCESS, Stage.DONE, ErrorCode.SUCCESS.message)
+
+
+async def _run_heartbeat(reporter: ProgressReporter, interval: float) -> None:
+    """按固定间隔发心跳，直到被取消。
+
+    它与主流程、哨兵并发运行，但 **不参与竞速**——永远不会「赢」，
+    只会在流程结束时被取消。因此这里是个无限循环，
+    退出完全依赖外部的 cancel。
+    """
+    while True:
+        await asyncio.sleep(interval)
+        reporter.heartbeat()
 
 
 async def _run_sentinel(ctx: PipelineContext, tracker: _StageTracker) -> PipelineResult:
@@ -198,10 +216,20 @@ async def run_pipeline(
 
     # 按配置跳过非必要步骤。白名单已在配置校验阶段把关，
     # 上传与发布这类必要环节不可能出现在这里。
-    skipped = config.skip_stages
+    skipped = set(config.skip_stages)
+
+    # 未配置商品链接 = 发布纯内容视频，自动跳过挂车。
+    #
+    # 这里显式打一条日志：自动行为不能静默发生。
+    # 若使用者本想挂车却漏填了链接，任务会「成功」但没挂上商品——
+    # 一条明确的日志是他事后唯一能发现这件事的线索。
+    if not config.needs_cart and Stage.CART not in skipped:
+        logger.info("[流程] 未配置商品链接，跳过挂车（按纯内容视频处理）")
+        skipped.add(Stage.CART)
+
     if skipped:
         names = "、".join(s.title for s in steps if s.stage in skipped)
-        logger.info(f"[流程] 按配置跳过步骤：{names}")
+        logger.info(f"[流程] 实际跳过的步骤：{names}")
         steps = tuple(s for s in steps if s.stage not in skipped)
 
     # 一、打开发布页
@@ -225,20 +253,52 @@ async def run_pipeline(
 
     # 三、主流程与哨兵竞速
     logger.info(f"[流程] 开始执行，总时长上限 {budget:.0f}s")
-    result, _ = await wait_for_first(
-        _run_steps(ctx, tracker, steps),
-        _run_sentinel(ctx, tracker),
-        timeout=budget,
-    )
+
+    reporter = ProgressReporter(config.progress.enabled, len(steps))
+
+    # 心跳与竞速无关，单独起一个任务。
+    # 它不参与 wait_for_first，否则「心跳到点」会被当成一个结论。
+    heartbeat_task: asyncio.Task[None] | None = None
+    if reporter.enabled and config.progress.heartbeat > 0:
+        heartbeat_task = asyncio.create_task(
+            _run_heartbeat(reporter, config.progress.heartbeat), name="heartbeat"
+        )
+
+    try:
+        result, _ = await wait_for_first(
+            _run_steps(ctx, tracker, steps, reporter),
+            _run_sentinel(ctx, tracker),
+            timeout=budget,
+        )
+    finally:
+        # 放在 finally：无论正常结束、失败还是被取消，
+        # 心跳都必须停下，否则会留下悬挂任务。
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
     if result is None:
         # 两者都没出结论，总超时兜底
         logger.error("[流程] 整体超时")
-        return PipelineResult(
+        result = PipelineResult(
             ErrorCode.PIPELINE_TIMEOUT,
             tracker.current,
             f"流程超过 {budget:.0f}s 仍未结束",
         )
+
+    # 失败时留下现场。
+    #
+    # 放在这里而不是各步骤内部，是因为失败有两个来源：步骤自身抛错，
+    # 以及哨兵中止。写在一处才能两种都覆盖到。
+    if not result.ok and config.screenshot.on_failure:
+        shot = await capture_failure(
+            page, config.screenshot.dir, config.task_id, result.stage
+        )
+        if shot:
+            result = replace(result, screenshot=shot)
 
     logger.info(f"[流程] 结论：{result}")
     return result

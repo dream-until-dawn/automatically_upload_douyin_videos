@@ -160,6 +160,7 @@ def test_结果json包含全部约定字段() -> None:
 
     assert payload == {
         "schema": SCHEMA_VERSION,
+        "type": "result",
         "ok": False,
         "code": 21,
         "name": "CART_LIMIT_REACHED",
@@ -170,7 +171,26 @@ def test_结果json包含全部约定字段() -> None:
         "taskId": "t1",
         "douyinId": "d1",
         "elapsedMs": 8423,
+        "screenshot": None,
     }
+
+
+def test_失败结果可携带截图路径() -> None:
+    """截图路径要能传到上游，否则截了也没人知道在哪。"""
+    result = TaskResult(
+        code=ErrorCode.COVER_FAILED,
+        stage=Stage.COVER,
+        message="封面配置失败",
+        screenshot=r"C:\shots60920-150000_t1_cover.png",
+    )
+    payload = json.loads(result.to_json())
+    assert payload["screenshot"].endswith("_cover.png")
+
+
+def test_成功结果的截图字段为空() -> None:
+    """成功时不该有截图——成功路径本就不截。"""
+    result = TaskResult(ErrorCode.SUCCESS, Stage.DONE, "发布成功")
+    assert json.loads(result.to_json())["screenshot"] is None
 
 
 def test_成功结果的ok为真() -> None:

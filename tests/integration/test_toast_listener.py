@@ -191,3 +191,51 @@ async def test_静默场景下确实收不到上传结论(page: Page, tmp_path) 
         EventType.UPLOAD_SUCCESS, EventType.UPLOAD_FAILURE, timeout=1.5
     )
     assert event is None, f"静默场景不应给出任何上传结论，却收到了 {event}"
+
+
+# ======================================================================
+# 页面导航后监听器要能自动恢复
+# ======================================================================
+
+
+async def test_页面导航后监听器仍然有效(page: Page) -> None:
+    """这一条曾经是「文档声称支持、实际从未生效」的能力。
+
+    安装脚本既通过 add_init_script 在导航时执行，也通过 evaluate 在当前页执行。
+    导航时 document.body 往往还不存在，observe(null) 会抛错；
+    而当时「已安装」标记设在 observe 之前，于是随后那次 evaluate
+    被幂等保护挡掉——观察器一个都没装上，却没有任何报错，
+    表现为「导航后提示全部漏掉、等待必定超时」。
+    """
+    bus = await setup_page(page)
+
+    # 触发一次真实导航，init script 路径会被走到
+    await page.goto(mock_page_url())
+
+    sub = bus.subscribe()
+    await page.evaluate("() => window.__showToast('视频上传成功')")
+
+    assert await sub.wait_for(EventType.UPLOAD_SUCCESS, timeout=5) is not None, (
+        "导航之后监听器失效了"
+    )
+
+
+async def test_同一页面二次安装后新总线能收到事件(page: Page) -> None:
+    """Playwright 的 expose_function 在同一页面只能注册一次且无法反注册。
+
+    若回调闭包捕获了第一个总线，第二次安装时新总线就永远收不到事件，
+    表现为「第二次跑流程必定等待超时」，日志里看不出任何异常。
+    """
+    await setup_page(page)
+
+    # 重新导航并用一个全新的总线再装一次
+    await page.goto(mock_page_url())
+    second_bus = EventBus()
+    await install_toast_listener(page, second_bus)
+
+    sub = second_bus.subscribe()
+    await page.evaluate("() => window.__showToast('作品发布成功')")
+
+    assert await sub.wait_for(EventType.PUBLISH_SUCCESS, timeout=5) is not None, (
+        "二次安装后新总线收不到事件"
+    )

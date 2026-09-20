@@ -25,6 +25,7 @@ MutationObserver 是事件驱动的，不存在采样间隔问题。
 from __future__ import annotations
 
 import json
+from weakref import WeakKeyDictionary
 
 from playwright.async_api import Page
 
@@ -37,6 +38,16 @@ logger = get_logger("browser.toast")
 # 暴露给页面 JS 的回调函数名。加前缀是为了避免与页面自身的全局变量冲突。
 _BINDING_NAME = "__dy_publisher_on_toast"
 
+# 页面 -> 当前事件总线。
+#
+# 为什么需要这张表：Playwright 的 expose_function 在同一页面上只能注册一次，
+# 且没有反注册接口。若回调直接闭包捕获 bus，那么在同一页面上第二次安装监听器时，
+# 新的 bus 收不到任何事件——旧回调仍指向第一个 bus，而它已经没人读了。
+# 表现出来就是「第二次跑流程必定等待超时」，且日志里看不出任何异常。
+#
+# 用弱引用键：页面关闭后条目自动消失，不会把 Page 对象长期留在内存里。
+_page_buses: WeakKeyDictionary[Page, EventBus] = WeakKeyDictionary()
+
 # 注入页面的监听脚本。
 #
 # 脚本自身带幂等保护：重复注入（例如导航后 init script 与 evaluate 都跑了一遍）
@@ -48,6 +59,26 @@ _OBSERVER_SCRIPT = """
 
     // 幂等保护：同一个页面只装一次观察器
     if (window.__dyPublisherToastInstalled) return;
+
+    // document.body 尚未就绪时不能 observe。
+    //
+    // 这一步曾经是个隐蔽的坑：本脚本既通过 add_init_script 在导航时执行，
+    // 也通过 evaluate 在当前页面执行。导航时 body 往往还不存在，
+    // observe(null) 会抛错；而若此时「已安装」标记已经设上，
+    // 随后那次 evaluate 就会被幂等保护挡掉——结果是观察器一个都没装上，
+    // 却看不到任何报错，表现为「提示全部漏掉、等待必定超时」。
+    //
+    // 因此：body 未就绪时挂到 DOMContentLoaded 上重试，
+    // 且标记只在真正装成功之后才设置。
+    if (!document.body) {
+        document.addEventListener(
+            'DOMContentLoaded',
+            () => window.__dyPublisherInstallToast && window.__dyPublisherInstallToast(),
+            { once: true }
+        );
+        return;
+    }
+
     window.__dyPublisherToastInstalled = true;
 
     // 已上报过的节点，避免重复上报
@@ -110,6 +141,15 @@ _OBSERVER_SCRIPT = """
 }
 """
 
+# 把安装函数挂到 window 上，供 DOMContentLoaded 回调再次触发。
+# 直接把上面的箭头函数存起来即可，参数在注入时就已绑定。
+_INSTALLER_SCRIPT = """
+(args) => {
+    window.__dyPublisherInstallToast = () => (%s)(args);
+    window.__dyPublisherInstallToast();
+}
+""" % _OBSERVER_SCRIPT
+
 
 def translate_toast(text: str) -> EventType | None:
     """把轻提示文本翻译为事件类型。
@@ -147,7 +187,14 @@ async def install_toast_listener(page: Page, bus: EventBus) -> None:
 
         这是同步函数：EventBus.publish 使用 put_nowait，不会阻塞，
         因此可以安全地在 binding 回调中直接调用。
+
+        刻意每次都从注册表取 bus，而不是闭包捕获——
+        原因见 _page_buses 的说明。
         """
+        current = _page_buses.get(page)
+        if current is None:
+            return
+
         trimmed = (text or "").strip()
         if not trimmed:
             return
@@ -159,7 +206,12 @@ async def install_toast_listener(page: Page, bus: EventBus) -> None:
             return
 
         logger.info(f"[提示] {event_type.value} <- {trimmed}")
-        bus.publish(PageEvent(type=event_type, text=trimmed))
+        current.publish(PageEvent(type=event_type, text=trimmed))
+
+    # 先更新注册表，再注册 binding。
+    # 顺序很重要：binding 可能已经存在（第二次安装），
+    # 此时唯一起作用的就是这张表。
+    _page_buses[page] = bus
 
     # binding 注册在页面级，重复注册会抛错；同一个页面只需装一次
     try:
@@ -170,9 +222,9 @@ async def install_toast_listener(page: Page, bus: EventBus) -> None:
     # 对后续导航生效：页面跳转后脚本会被清除，需要自动重装
     script_args = [Toast.CONTAINER_CSS, _BINDING_NAME]
     await page.add_init_script(
-        f"({_OBSERVER_SCRIPT})({json.dumps(script_args)})"
+        f"({_INSTALLER_SCRIPT})({json.dumps(script_args)})"
     )
     # 对当前页面生效：init script 只影响之后的导航，当前页面要手动执行一次
-    await page.evaluate(_OBSERVER_SCRIPT, script_args)
+    await page.evaluate(_INSTALLER_SCRIPT, script_args)
 
     logger.info("[提示] 轻提示监听器已安装")

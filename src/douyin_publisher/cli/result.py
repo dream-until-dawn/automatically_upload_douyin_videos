@@ -33,6 +33,7 @@ class TaskResult:
         task_id: 上游任务 ID，原样回传便于对账。
         douyin_id: 抖音账号标识，原样回传。
         elapsed_ms: 执行耗时（毫秒）。
+        screenshot: 失败现场截图的路径；成功或未截图时为 None。
     """
 
     code: ErrorCode
@@ -41,6 +42,7 @@ class TaskResult:
     task_id: str = ""
     douyin_id: str = ""
     elapsed_ms: int = 0
+    screenshot: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         """转换为输出用的字典。
@@ -49,6 +51,9 @@ class TaskResult:
         """
         return {
             "schema": SCHEMA_VERSION,
+            # 与进度行区分。开启进度回报后 stdout 会有多行，
+            # 结果永远是最后一行，见 docs/adr/0004-progress-reporting.md。
+            "type": "result",
             "ok": self.code.ok,
             "code": self.code.code,
             "name": self.code.name,
@@ -59,6 +64,8 @@ class TaskResult:
             "taskId": self.task_id,
             "douyinId": self.douyin_id,
             "elapsedMs": self.elapsed_ms,
+            # 失败现场截图。成功时为 null，上游可据此决定要不要展示。
+            "screenshot": self.screenshot,
         }
 
     def to_json(self) -> str:
