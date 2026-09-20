@@ -66,7 +66,7 @@
 
 | 模块 | 内容 |
 | --- | --- |
-| `pipeline/context.py` | 流程上下文、待决错误机制 |
+| `pipeline/context.py` | 流程上下文（配置、页面、事件总线、时长预算） |
 | `pipeline/runner.py` | 哨兵与主流程竞速、取消传播、总超时兜底 |
 | `cli/` | 子命令分发、退出码与 JSON 结果输出 |
 
