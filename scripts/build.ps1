@@ -136,11 +136,31 @@ foreach ($case in $cases) {
     $json = $null
     try { $json = $out | Select-Object -Last 1 | ConvertFrom-Json } catch { }
 
-    $ok = ($null -ne $json) -and ($code -eq $case.Expect) -and ($json.code -eq $code)
+    # 除退出码与 code 一致外，还要确认结果结构完整：
+    # type 用于与进度行区分，screenshot 字段必须存在（失败时为路径，成功时为 null）。
+    # 少了任何一个，上游按文档写的解析代码都会出问题。
+    $hasType = ($null -ne $json) -and ($json.type -eq "result")
+    $hasShot = ($null -ne $json) -and ($json.PSObject.Properties.Name -contains "screenshot")
+
+    $ok = ($null -ne $json) -and ($code -eq $case.Expect) -and ($json.code -eq $code) -and $hasType -and $hasShot
     if (-not $ok) { $contractOk = $false }
     $flag = if ($ok) { "OK " } else { "BAD" }
     $name = if ($null -ne $json) { $json.name } else { "<无法解析 JSON>" }
-    Write-Host "       [$flag] $($case.Name)：退出码=$code 期望=$($case.Expect) name=$name"
+    $detail = ""
+    if (-not $hasType) { $detail += " [缺 type=result]" }
+    if (-not $hasShot) { $detail += " [缺 screenshot 字段]" }
+    Write-Host "       [$flag] $($case.Name)：退出码=$code 期望=$($case.Expect) name=$name$detail"
+}
+
+# 进度回报默认关闭，因此 stdout 必须只有一行。
+# 这条守的是向后兼容：上游若按「整段 json.loads」解析，多一行就会直接失败。
+$lineOut = & $exePath publish "垃圾数据" 2>$null
+$lineCount = ($lineOut | Where-Object { $_.Trim() -ne "" } | Measure-Object).Count
+if ($lineCount -ne 1) {
+    Write-Host "       [BAD] 默认配置下 stdout 有 $lineCount 行，应为 1 行" -ForegroundColor Red
+    $contractOk = $false
+} else {
+    Write-Host "       [OK ] 默认配置下 stdout 仅一行（进度回报默认关闭）"
 }
 
 if (-not $contractOk) {
