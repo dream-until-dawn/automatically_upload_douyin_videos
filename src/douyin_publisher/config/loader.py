@@ -20,6 +20,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from douyin_publisher.config.models import TaskConfig
+from douyin_publisher.config.runtime import validate_browser_args, validate_skip_stages
 from douyin_publisher.core.errors import ErrorCode, PublishError
 from douyin_publisher.core.stages import Stage
 
@@ -133,6 +134,18 @@ def bind_task_config(payload: dict[str, Any]) -> TaskConfig:
             f"以下必填字段不能为空：{'、'.join(empty)}",
             stage=Stage.CONFIG,
         )
+
+    # 运行时选项的取值校验。
+    #
+    # 归为 CONFIG_INVALID 而非 CONFIG_PARSE_FAILED：字段本身拼对了，
+    # 是取值不合法。上游据此能分清「我 JSON 拼错了」和「我填了个不让填的值」。
+    try:
+        validate_browser_args(config.browser_args)
+        validate_skip_stages(config.skip)
+    except ValueError as exc:
+        raise PublishError(
+            ErrorCode.CONFIG_INVALID, str(exc), stage=Stage.CONFIG, cause=exc
+        ) from exc
 
     return config
 

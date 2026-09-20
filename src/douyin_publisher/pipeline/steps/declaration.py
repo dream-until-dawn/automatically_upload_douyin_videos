@@ -16,10 +16,6 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.declaration")
-
-# 各环节的等待超时（秒）
-ELEMENT_TIMEOUT = 10.0
-
 # 选中选项后的停顿（秒），等待「确定」按钮解禁
 SELECT_PAUSE = 0.5
 
@@ -37,7 +33,7 @@ async def run(ctx: PipelineContext) -> None:
     if not await click_usable(
         ctx.page,
         Declaration.SELECT_BOX_XPATH,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(
             ErrorCode.DECLARATION_FAILED, "未找到自主声明下拉框（页面结构可能已变更）"
@@ -51,7 +47,7 @@ async def run(ctx: PipelineContext) -> None:
         Declaration.RADIO_CSS,
         has_text=option,
         exact=True,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(
             ErrorCode.DECLARATION_FAILED, f"未找到自主声明选项「{option}」"
@@ -66,7 +62,7 @@ async def run(ctx: PipelineContext) -> None:
         Declaration.CONFIRM_BUTTON_CSS,
         has_text=Declaration.TEXT_CONFIRM,
         exact=True,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(
             ErrorCode.DECLARATION_FAILED, "「确定」按钮未出现或始终处于禁用状态"

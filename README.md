@@ -141,6 +141,21 @@ uv run python -m douyin_publisher publish "<Base64 编码的配置>"
 
 字段含义与取值见 [CLI 协议](docs/cli-protocol.md)。
 
+还可以按环境调整运行时选项（全部可选，不配置时行为不变）：
+
+```json
+{
+  "timeouts": { "upload": 900 },
+  "browserArgs": ["--proxy-server=http://127.0.0.1:8080"],
+  "logLevel": "quiet",
+  "skip": ["cart"]
+}
+```
+
+`timeouts` 最常调的是 `upload`（视频大或带宽窄时）；`skip` 用于发布不带商品的
+纯内容视频。只暴露了调用方有判断依据去调的参数，理由见
+[ADR-0003](docs/adr/0003-runtime-options.md)。
+
 ### 清理进程
 
 ```bash

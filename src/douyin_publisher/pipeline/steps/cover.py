@@ -17,14 +17,6 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.cover")
-
-# 封面入口与弹窗的等待超时（秒）
-ELEMENT_TIMEOUT = 10.0
-
-# 等待「设置横封面」可用的超时（秒）。
-# 它要等页面抽完候选帧才解禁，比一般元素慢得多。
-FRAME_READY_TIMEOUT = 60.0
-
 # 各环节之间的停顿（秒）
 STEP_PAUSE = 0.5
 
@@ -39,14 +31,14 @@ async def run(ctx: PipelineContext) -> None:
 
     # 一、打开封面弹窗
     if not await click_usable(
-        ctx.page, Cover.ENTRY_XPATH, timeout=ctx.deadline.budget(ELEMENT_TIMEOUT)
+        ctx.page, Cover.ENTRY_XPATH, timeout=ctx.deadline.budget(ctx.config.timeouts.element)
     ):
         raise PublishError(
             ErrorCode.COVER_FAILED, "未找到「选择封面」入口（页面结构可能已变更）"
         )
 
     if await find_usable(
-        ctx.page, Cover.MODAL_CSS, timeout=ctx.deadline.budget(ELEMENT_TIMEOUT)
+        ctx.page, Cover.MODAL_CSS, timeout=ctx.deadline.budget(ctx.config.timeouts.element)
     ) is None:
         raise PublishError(ErrorCode.COVER_FAILED, "封面设置弹窗未出现")
 
@@ -56,7 +48,7 @@ async def run(ctx: PipelineContext) -> None:
         Cover.BUTTON_CSS,
         has_text=Cover.TEXT_SET_HORIZONTAL,
         exact=True,
-        timeout=ctx.deadline.budget(FRAME_READY_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.cover_frame),
     ):
         raise PublishError(
             ErrorCode.COVER_FAILED,
@@ -70,7 +62,7 @@ async def run(ctx: PipelineContext) -> None:
         Cover.BUTTON_CSS,
         has_text=Cover.TEXT_DONE,
         exact=True,
-        timeout=ctx.deadline.budget(ELEMENT_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(ErrorCode.COVER_FAILED, "未找到封面设置的「完成」按钮")
 

@@ -29,6 +29,7 @@ import pytest
 from playwright.async_api import BrowserContext
 
 from douyin_publisher.config.models import TaskConfig
+from douyin_publisher.config.runtime import Timeouts
 from douyin_publisher.core.errors import ErrorCode
 from douyin_publisher.core.stages import Stage
 from douyin_publisher.pipeline import runner
@@ -342,9 +343,22 @@ async def test_挂车失败时不空等上传(
     流程会继续走到「等待上传完成」并在那里空等到超时。
 
     这正是场景参数必须正交可组合的原因——单一场景名表达不了这种组合。
+
+    ## 为什么显式配一个很短的 element 超时
+
+    本条要断言的是「有没有空等上传」，而不是挂车步骤自身失败得快不快。
+    部分挂车场景（如「完成后无卡片」）要等满元素超时才能判定失败，
+    那段耗时属于挂车步骤本身，会干扰这里的判断——
+    调整元素超时的默认值时，这条测试就会因为无关原因而变红。
+
+    把元素超时压到很短，两者的量级差距就一目了然：
+    挂车自身失败约数秒，而空等上传会接近总超时（{TEST_TOTAL_TIMEOUT} 秒）。
     """
+    # 模拟页的元素都是即时渲染的，3 秒足够；真实页面不会用这个值
+    config = task_config.model_copy(update={"timeouts": Timeouts(element=3)})
+
     result, elapsed = await run_with(
-        task_config,
+        config,
         browser_context,
         total_timeout=TEST_TOTAL_TIMEOUT,
         cart=cart_mode,

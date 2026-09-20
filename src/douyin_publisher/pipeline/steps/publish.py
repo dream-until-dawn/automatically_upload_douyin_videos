@@ -17,18 +17,9 @@ from douyin_publisher.core.logging import get_logger
 from douyin_publisher.pipeline.context import PipelineContext
 
 logger = get_logger("pipeline.publish")
-
-# 发布按钮的等待超时（秒）
-BUTTON_TIMEOUT = 15.0
-
 # 点击发布前的停顿（秒）。
 # 前一步刚关闭封面弹窗，页面需要时间收起遮罩；遮罩未消失时点击会被拦截。
 PRE_CLICK_PAUSE = 1.5
-
-# 等待发布结果的超时（秒）
-RESULT_TIMEOUT = 120.0
-
-
 async def run_click(ctx: PipelineContext) -> None:
     """点击发布按钮。
 
@@ -43,7 +34,7 @@ async def run_click(ctx: PipelineContext) -> None:
         Publish.BUTTON_CSS,
         has_text=Publish.TEXT_PUBLISH,
         exact=True,
-        timeout=ctx.deadline.budget(BUTTON_TIMEOUT),
+        timeout=ctx.deadline.budget(ctx.config.timeouts.element),
     ):
         raise PublishError(
             ErrorCode.PUBLISH_FAILED, "未找到可用的「发布」按钮"
@@ -59,7 +50,7 @@ async def run_await_result(ctx: PipelineContext) -> None:
     Raises:
         PublishError: PIPELINE_TIMEOUT —— 超时仍未收到任何发布结论。
     """
-    budget = ctx.deadline.budget(RESULT_TIMEOUT)
+    budget = ctx.deadline.budget(ctx.config.timeouts.publish)
     logger.info(f"[发布] 等待发布结果（最多 {budget:.0f}s）")
 
     with ctx.bus.subscribe() as subscription:

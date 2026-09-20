@@ -11,6 +11,13 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from douyin_publisher.config.runtime import (
+    LogLevel,
+    Timeouts,
+    validate_skip_stages,
+)
+from douyin_publisher.core.stages import Stage
+
 # 发布时间模式的两个取值
 MODE_IMMEDIATE = "立即发布"
 MODE_SCHEDULED = "定时发布"
@@ -71,6 +78,25 @@ class TaskConfig(BaseModel):
     # ---- 选填：运行方式 ----
     headless: bool = Field(False, description="是否无头运行")
 
+    # ---- 选填：运行时选项 ----
+    #
+    # 全部可选，缺省时行为与不配置完全一致。
+    # 划分依据见 docs/adr/0003-runtime-options.md：只暴露调用方有判断依据去调的参数。
+    timeouts: Timeouts = Field(
+        default_factory=Timeouts, description="各环节的等待上限（秒）"
+    )
+    browser_args: list[str] = Field(
+        default_factory=list,
+        alias="browserArgs",
+        description="追加的 Chrome 启动参数，不替换内置参数",
+    )
+    log_level: LogLevel = Field(
+        LogLevel.NORMAL, alias="logLevel", description="日志详细程度"
+    )
+    skip: list[str] = Field(
+        default_factory=list, description="要跳过的阶段名，仅限非必要环节"
+    )
+
     # ------------------------------------------------------------------
     # 派生属性：把上游传来的原始字符串翻译成流程可直接使用的值
     # ------------------------------------------------------------------
@@ -97,6 +123,15 @@ class TaskConfig(BaseModel):
         if hours < MIN_PUBLISH_DELAY_HOURS:
             return DEFAULT_PUBLISH_DELAY_HOURS
         return min(hours, MAX_PUBLISH_DELAY_HOURS)
+
+    @property
+    def skip_stages(self) -> frozenset[Stage]:
+        """已解析的待跳过阶段。
+
+        取值合法性在配置校验阶段已经保证（见 config/loader.py），
+        这里只做转换。
+        """
+        return frozenset(validate_skip_stages(self.skip))
 
     @property
     def effective_self_declaration(self) -> str:
@@ -131,8 +166,16 @@ class TaskConfig(BaseModel):
         刻意不输出完整配置：user_data_dir 指向用户的浏览器画像目录，
         属于敏感路径，日志中只保留定位问题所必需的字段。
         """
+        extra = ""
+        if self.skip:
+            extra += f", skip={self.skip}"
+        if self.browser_args:
+            extra += f", browserArgs={len(self.browser_args)}项"
+        if self.timeouts.total != Timeouts().total:
+            extra += f", total={self.timeouts.total:.0f}s"
+
         return (
             f"TaskConfig(taskId={self.task_id}, douyinId={self.douyin_id}, "
             f"video={self.video_path}, mode={self.publish_time_mode or '未指定'}, "
-            f"headless={self.headless})"
+            f"headless={self.headless}{extra})"
         )

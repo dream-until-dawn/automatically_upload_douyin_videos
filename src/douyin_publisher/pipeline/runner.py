@@ -51,11 +51,11 @@ from douyin_publisher.pipeline.steps import (
 
 logger = get_logger("pipeline.runner")
 
-# 整个发布流程的总时长上限（秒）
+# 整个发布流程的总时长上限（秒）。
+#
+# 仅作为调用方未指定时的回退值——实际取值来自 config.timeouts.total，
+# 见 docs/adr/0003-runtime-options.md。
 TOTAL_TIMEOUT = 600.0
-
-# 打开发布页的超时（秒）
-NAVIGATE_TIMEOUT = 60.0
 
 
 # 流程步骤，按执行顺序排列。
@@ -172,7 +172,7 @@ async def run_pipeline(
     config: TaskConfig,
     browser_context: BrowserContext,
     *,
-    total_timeout: float = TOTAL_TIMEOUT,
+    total_timeout: float | None = None,
     page_url: str = PUBLISH_PAGE_URL,
     steps: tuple[Step, ...] = STEPS,
 ) -> PipelineResult:
@@ -181,7 +181,8 @@ async def run_pipeline(
     Args:
         config: 任务配置。
         browser_context: 已启动的浏览器上下文。
-        total_timeout: 总时长上限（秒）。
+        total_timeout: 总时长上限（秒）。留空则取 config.timeouts.total；
+            显式传值主要供测试使用。
         page_url: 发布页地址，测试时指向本地模拟页。
         steps: 要执行的步骤序列。默认是完整流程；
             真实环境的冒烟脚本会传入一个去掉发布动作的子集，
@@ -191,13 +192,22 @@ async def run_pipeline(
         流程结论。本函数不抛异常，所有失败都以结论的形式返回——
         调用方因此可以确信清理逻辑与结果输出一定会执行。
     """
-    deadline = Deadline(total_timeout)
+    budget = total_timeout if total_timeout is not None else config.timeouts.total
+    deadline = Deadline(budget)
     tracker = _StageTracker()
+
+    # 按配置跳过非必要步骤。白名单已在配置校验阶段把关，
+    # 上传与发布这类必要环节不可能出现在这里。
+    skipped = config.skip_stages
+    if skipped:
+        names = "、".join(s.title for s in steps if s.stage in skipped)
+        logger.info(f"[流程] 按配置跳过步骤：{names}")
+        steps = tuple(s for s in steps if s.stage not in skipped)
 
     # 一、打开发布页
     page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
     try:
-        await _open_publish_page(page, page_url, deadline)
+        await _open_publish_page(page, page_url, deadline, config.timeouts.navigate)
     except PublishError as exc:
         return PipelineResult(exc.code, exc.stage or Stage.NAVIGATE, exc.message)
 
@@ -214,11 +224,11 @@ async def run_pipeline(
     ctx = PipelineContext(config=config, page=page, bus=bus, deadline=deadline)
 
     # 三、主流程与哨兵竞速
-    logger.info(f"[流程] 开始执行，总时长上限 {total_timeout:.0f}s")
+    logger.info(f"[流程] 开始执行，总时长上限 {budget:.0f}s")
     result, _ = await wait_for_first(
         _run_steps(ctx, tracker, steps),
         _run_sentinel(ctx, tracker),
-        timeout=total_timeout,
+        timeout=budget,
     )
 
     if result is None:
@@ -227,14 +237,16 @@ async def run_pipeline(
         return PipelineResult(
             ErrorCode.PIPELINE_TIMEOUT,
             tracker.current,
-            f"流程超过 {total_timeout:.0f}s 仍未结束",
+            f"流程超过 {budget:.0f}s 仍未结束",
         )
 
     logger.info(f"[流程] 结论：{result}")
     return result
 
 
-async def _open_publish_page(page: Page, url: str, deadline: Deadline) -> None:
+async def _open_publish_page(
+    page: Page, url: str, deadline: Deadline, timeout: float
+) -> None:
     """打开发布页。
 
     用 domcontentloaded 而非 load：创作者中心会持续加载各类资源，
@@ -250,7 +262,7 @@ async def _open_publish_page(page: Page, url: str, deadline: Deadline) -> None:
         await page.goto(
             url,
             wait_until="domcontentloaded",
-            timeout=deadline.budget(NAVIGATE_TIMEOUT) * 1000,
+            timeout=deadline.budget(timeout) * 1000,
         )
     except Exception as exc:
         raise PublishError(
