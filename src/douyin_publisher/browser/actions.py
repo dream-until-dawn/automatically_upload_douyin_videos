@@ -49,7 +49,7 @@ async def is_usable(locator: Locator) -> bool:
         return False
 
 
-def _build_text_matcher(text: str | None, exact: bool) -> re.Pattern[str] | str | None:
+def build_text_matcher(text: str | None, exact: bool) -> re.Pattern[str] | str | None:
     """构造 Playwright 的文本匹配条件。
 
     Args:
@@ -90,7 +90,7 @@ async def find_usable(
     Returns:
         可用的元素；超时未找到则返回 None，由调用方翻译成恰当的错误码。
     """
-    matcher = _build_text_matcher(has_text, exact)
+    matcher = build_text_matcher(has_text, exact)
 
     async def probe() -> Locator | None:
         candidate = page.locator(selector, has_text=matcher).first
