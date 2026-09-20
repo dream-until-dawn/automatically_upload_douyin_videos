@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest_asyncio
-from playwright.async_api import Browser, Page, async_playwright
+from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 # 模拟页所在目录
 PAGES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "pages"
@@ -64,5 +64,19 @@ async def page(browser: Browser) -> AsyncIterator[Page]:
     context = await browser.new_context()
     try:
         yield await context.new_page()
+    finally:
+        await context.close()
+
+
+@pytest_asyncio.fixture
+async def browser_context(browser: Browser) -> AsyncIterator[BrowserContext]:
+    """一个全新的浏览器上下文。
+
+    run_pipeline 接收的是上下文而非页面——它需要自己决定复用现有页面还是新开一个，
+    这与生产环境中持久化上下文往往已带着一个页面的情形一致。
+    """
+    context = await browser.new_context()
+    try:
+        yield context
     finally:
         await context.close()

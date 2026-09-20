@@ -290,6 +290,24 @@ def test_用户数据目录是文件报5(valid_payload: dict[str, Any], tmp_path
     assert_error_code(exc_info, ErrorCode.USER_DATA_DIR_INVALID)
 
 
+def test_路径规范化失败报7(monkeypatch: pytest.MonkeyPatch) -> None:
+    """路径解析失败在正常环境下几乎不会发生，只能靠打桩构造。
+
+    但它必须有确定的错误码：少了这条分支，一个罕见的文件系统异常
+    会一路冒泡成兜底的 88，让上游误以为是程序缺陷。
+    """
+    from douyin_publisher.config.loader import resolve_user_data_dir
+
+    def boom(self: Path, *args: Any, **kwargs: Any) -> Path:
+        raise OSError("模拟路径解析失败")
+
+    monkeypatch.setattr(Path, "resolve", boom)
+
+    with pytest.raises(PublishError) as exc_info:
+        resolve_user_data_dir("D:/whatever")
+    assert_error_code(exc_info, ErrorCode.PATH_RESOLVE_FAILED)
+
+
 def test_视频不存在报6(valid_payload: dict[str, Any], tmp_path: Path) -> None:
     config = bind_task_config({**valid_payload, "videoPath": str(tmp_path / "缺失.mp4")})
     with pytest.raises(PublishError) as exc_info:

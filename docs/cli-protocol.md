@@ -21,6 +21,7 @@ python -m douyin_publisher <子命令> <参数>
 | `publish` | 任务配置（Base64 或裸 JSON） | 执行完整的视频发布流程 |
 | `close-chrome` | 用户数据目录路径 | 清理占用该目录的浏览器进程 |
 | `close-jianying` | 无 | 清理剪辑软件进程 |
+| `selfcheck` | 无 | 自检运行时依赖是否齐备，用于部署后快速验证 |
 
 > 兼容性：`closeChrome` / `closeJianying` 这两种驼峰写法同样被接受，
 > 以便上游无需改动即可对接。新接入方请使用短横线写法。
@@ -157,3 +158,11 @@ python -m douyin_publisher publish "eyJleGVjUGF0aCI6IC4uLn0="
 ```bash
 python -m douyin_publisher close-chrome "D:/workspace/chrome_profiles/abc123"
 ```
+
+```bash
+douyin_publisher.exe selfcheck
+```
+
+自检会 **真正启动** Playwright 驱动，而不只是做 import 检查——
+打包产物最典型的故障是「能构建、不能跑」，import 成功并不代表驱动进程拉得起来。
+

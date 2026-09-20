@@ -16,14 +16,22 @@
 
   ## 可编程的失败注入
 
-  通过 URL 查询参数控制页面行为，从而在毫秒级、零副作用的前提下复现各类异常：
+  通过 URL 查询参数控制页面行为，在毫秒级、零副作用的前提下复现各类异常。
 
-    scenario      场景名，决定弹出什么轻提示、挂车走哪条分支
-    uploadDelay   投递文件后多久弹出上传结果提示（毫秒）
-    publishDelay  点击发布后多久弹出发布结果提示（毫秒）
-    missing       要移除的元素，逗号分隔，用于模拟页面改版导致的元素缺失
+  参数按 **环节** 正交划分，可以自由组合——这一点很重要：
+  验证「挂车失败时不去空等上传」这类断言，必须能同时设定
+  「挂车失败」与「上传永不给结论」，单一的场景名表达不了这种组合。
 
-  例：?scenario=upload_failure&uploadDelay=200
+    upload        success（默认）| failure | silent | service_error | not_supported
+    cart          ok（默认）| limit | not_found | no_card | no_origin
+    cover         ok（默认）| no_modal
+    publish       success（默认）| failure | silent | service_error
+    uploadDelay   投递文件后多久弹出上传结果提示（毫秒，默认 300）
+    publishDelay  点击发布后多久弹出发布结果提示（毫秒，默认 200）
+    missing       要移除的元素，逗号分隔，模拟页面改版导致的元素缺失
+
+  例：?upload=failure&uploadDelay=200
+      ?cart=limit&upload=silent     挂车失败，同时上传永不给结论
       ?missing=editor
 -->
 <style>
@@ -144,14 +152,21 @@
 
   // ---------------- 场景参数 ----------------
   var params = new URLSearchParams(location.search);
-  var scenario = params.get("scenario") || "success";
+
+  // 每个环节一个独立维度，互不影响，可任意组合
+  var uploadMode = params.get("upload") || "success";
+  var cartMode = params.get("cart") || "ok";
+  var coverMode = params.get("cover") || "ok";
+  var publishMode = params.get("publish") || "success";
   var uploadDelay = parseInt(params.get("uploadDelay") || "300", 10);
   var publishDelay = parseInt(params.get("publishDelay") || "200", 10);
   var missing = (params.get("missing") || "").split(",").filter(Boolean);
 
-  // 把场景暴露出来，便于测试失败时快速看清页面当时处于什么配置
-  window.__mockScenario = { scenario: scenario, uploadDelay: uploadDelay,
-                            publishDelay: publishDelay, missing: missing };
+  // 把配置暴露出来，测试失败时能一眼看清页面当时处于什么状态
+  window.__mockScenario = {
+    upload: uploadMode, cart: cartMode, cover: coverMode, publish: publishMode,
+    uploadDelay: uploadDelay, publishDelay: publishDelay, missing: missing
+  };
 
   // ---------------- 元素缺失注入 ----------------
   // 模拟页面改版导致某个关键元素不复存在，用于验证各步骤的失败分支。
@@ -199,15 +214,16 @@
     fileInput.addEventListener("change", function () {
       document.getElementById("upload-hint").textContent = "已选择文件，上传中...";
 
-      // 该场景下永远不给结论，用于验证上传超时分支
-      if (scenario === "upload_silent") return;
+      // silent 下永远不给结论，用于验证上传超时分支，
+      // 也用于「其他环节先失败」的组合场景中充当长时间无结论的背景
+      if (uploadMode === "silent") return;
 
       setTimeout(function () {
-        if (scenario === "upload_failure") {
+        if (uploadMode === "failure") {
           showToast("视频上传失败，请稍后重试");
-        } else if (scenario === "service_error") {
+        } else if (uploadMode === "service_error") {
           showToast("服务开小差了，请稍后重试");
-        } else if (scenario === "product_not_supported") {
+        } else if (uploadMode === "not_supported") {
           showToast("该商品暂不支持在直播/短视频推广");
         } else {
           showToast("视频上传成功");
@@ -232,13 +248,13 @@
     var title = document.getElementById("cart-modal-title");
     var origin = document.getElementById("cart-origin-title");
 
-    if (scenario === "cart_limit") {
+    if (cartMode === "limit") {
       title.textContent = "无法添加购物车";
       origin.textContent = "";
-    } else if (scenario === "cart_not_found") {
+    } else if (cartMode === "not_found") {
       title.textContent = "未搜索到相关商品";
       origin.textContent = "";
-    } else if (scenario === "cart_no_origin_title") {
+    } else if (cartMode === "no_origin") {
       // 弹窗出现但读不到商品原标题，用于验证一般性挂车失败分支
       title.textContent = "编辑商品";
       origin.textContent = "";
@@ -251,9 +267,21 @@
 
   on("cart-finish-edit", function () {
     hide(document.getElementById("cart-modal"));
-    // 该场景下完成编辑后卡片始终不出现，模拟挂车静默失败
-    if (scenario === "cart_no_card") return;
+    // 该模式下完成编辑后卡片始终不出现，模拟挂车静默失败
+    if (cartMode === "no_card") return;
     show(document.getElementById("cart-added"));
+  });
+
+  // ---------------- 发布设置：记录实际选中项 ----------------
+  // 单选项本身没有可供外部观察的状态，测试无法验证「选中的到底是哪一个」。
+  // 这里把每次点击的文案记下来，让「选『允许』时有没有误选『不允许』」
+  // 这类隐患能够被断言——它们不会让流程失败，只会让设置悄悄反掉。
+  window.__selectedSettings = [];
+  document.querySelectorAll("#section-setting label").forEach(function (label) {
+    label.addEventListener("click", function () {
+      window.__selectedSettings.push(label.textContent.trim());
+      label.classList.add("checked");
+    });
   });
 
   // ---------------- 自主声明 ----------------
@@ -277,8 +305,8 @@
 
   // ---------------- 封面 ----------------
   on("cover-entry", function () {
-    // 该场景下点击封面入口后弹窗始终不出现
-    if (scenario === "cover_no_modal") return;
+    // 该模式下点击封面入口后弹窗始终不出现
+    if (coverMode === "no_modal") return;
     show(document.getElementById("dy-creator-content-modal-body"));
   });
 
@@ -292,13 +320,13 @@
 
   // ---------------- 发布 ----------------
   on("publish-btn", function () {
-    // 该场景下点击发布后永不给结论，用于验证整体超时分支
-    if (scenario === "publish_silent") return;
+    // 该模式下点击发布后永不给结论，用于验证整体超时分支
+    if (publishMode === "silent") return;
 
     setTimeout(function () {
-      if (scenario === "publish_failure") {
+      if (publishMode === "failure") {
         showToast("发布失败，请检查内容");
-      } else if (scenario === "publish_service_error") {
+      } else if (publishMode === "service_error") {
         showToast("服务异常，请稍后重试");
       } else {
         showToast("作品发布成功");

@@ -119,7 +119,28 @@ Windows PowerShell 5.1 读取无 BOM 的 UTF-8 脚本时，会按系统 ANSI 代
 
 落实：`scripts/*.ps1` 一律以 UTF-8 **带 BOM** 保存。
 
-### 3. PowerShell 中不可用 `2>&1` 捕获原生命令输出
+### 3. Playwright 自带 Chromium 的路径不能被显式传回
+
+把 `playwright.chromium.executable_path` 取到的路径再显式传给
+`launch_persistent_context(executable_path=...)`，会报 `spawn UNKNOWN` 而启动失败；
+**不传** 该参数则一切正常。
+
+三轮对照实验排除了两个初始猜测：
+
+| 猜测 | 实验 | 结果 |
+| --- | --- | --- |
+| 用户数据目录含中文导致 | ASCII 与中文路径各跑一遍 | 两者都成功，**不是** 原因 |
+| 与 headless 模式冲突 | headless 开关各跑一遍 | 两者都失败，**不是** 原因 |
+| 自带 Chromium 路径不能显式传 | 自带路径 vs 本机 Chrome 路径 | 自带失败、本机成功，**是** 原因 |
+
+**对生产无影响**：本程序本来就只会传本机 Chrome 的路径（那正是复用登录态的
+前提），实测成功。受影响的只有测试——需要显式传路径的那几条改用本机 Chrome，
+缺失时跳过（见 `tests/integration/test_launcher.py`）。
+
+值得记录的原因是：第一个猜测若不验证就写进文档，会变成一条「用户数据目录不能
+含中文」的假限制，而中文用户名在目标用户群里非常普遍。
+
+### 4. PowerShell 中不可用 `2>&1` 捕获原生命令输出
 
 PyInstaller 等工具把普通信息写入 stderr。在 PowerShell 5.1 中用 `2>&1` 捕获，
 每一行都会被包装成 `NativeCommandError`，即使命令退出码为 0 也会被判定为失败。

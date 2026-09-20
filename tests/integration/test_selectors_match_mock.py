@@ -83,10 +83,11 @@ async def test_模拟页确实加载成功(page: Page) -> None:
 
 async def test_场景参数被页面读取(page: Page) -> None:
     """失败注入依赖查询参数，若 file:// 下读不到，所有反向测试都会失效。"""
-    await page.goto(mock_page_url(scenario="upload_failure", uploadDelay=123))
+    await page.goto(mock_page_url(upload="failure", cart="limit", uploadDelay=123))
 
     scenario = await page.evaluate("() => window.__mockScenario")
-    assert scenario["scenario"] == "upload_failure"
+    assert scenario["upload"] == "failure"
+    assert scenario["cart"] == "limit", "各环节的场景必须能独立组合"
     assert scenario["uploadDelay"] == 123
 
 

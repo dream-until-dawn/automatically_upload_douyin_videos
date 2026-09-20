@@ -159,7 +159,7 @@ async def test_上传失败场景能秒级感知(page: Page, tmp_path) -> None:
     这条测试用耗时断言锁死本项目的核心承诺：
     若采集退化成轮询或事件被吞，耗时会显著上升。
     """
-    bus = await setup_page(page, scenario="upload_failure", uploadDelay=200)
+    bus = await setup_page(page, upload="failure", uploadDelay=200)
     sub = bus.subscribe()
 
     video = tmp_path / "demo.mp4"
@@ -180,7 +180,7 @@ async def test_静默场景下确实收不到上传结论(page: Page, tmp_path) 
     若这个场景其实会弹提示，那么「上传超时」的反向测试就测不到超时分支，
     会以「恰好成功」的方式假绿。
     """
-    bus = await setup_page(page, scenario="upload_silent")
+    bus = await setup_page(page, upload="silent")
     sub = bus.subscribe()
 
     video = tmp_path / "demo.mp4"

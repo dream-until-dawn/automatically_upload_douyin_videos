@@ -225,10 +225,10 @@ async def test_读取不存在的元素返回空列表(page: Page) -> None:
     assert await read_texts(page, "#不存在") == []
 
 
-@pytest.mark.parametrize("scenario", ["cart_limit", "cart_not_found"])
-async def test_读取弹窗标题以识别商品问题(page: Page, scenario: str) -> None:
+@pytest.mark.parametrize("cart_mode", ["limit", "not_found"])
+async def test_读取弹窗标题以识别商品问题(page: Page, cart_mode: str) -> None:
     """挂车分支依赖读取弹窗标题来区分上限与下架，这里验证读得到。"""
-    await page.goto(mock_page_url(scenario=scenario))
+    await page.goto(mock_page_url(cart=cart_mode))
     await page.click("#cart-select")
     await page.click("#cart-dropdown .select-dropdown-option-video >> nth=1")
     await page.click("#cart-add-link")
