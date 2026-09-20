@@ -43,5 +43,11 @@
   "screenshot": {
     "onFailure": true,
     "dir": ""
+  },
+
+  "_progress说明": "进度回报，默认关闭。开启后 stdout 会变成多行 JSON（每行一个，结果永远在最后一行），若上游是整段解析 stdout 则不要开启。heartbeat 是长等待期间的心跳间隔（秒），用来区分「正在上传」和「已经卡死」，填 0 则只报步骤不发心跳。",
+  "progress": {
+    "enabled": false,
+    "heartbeat": 15
   }
 }

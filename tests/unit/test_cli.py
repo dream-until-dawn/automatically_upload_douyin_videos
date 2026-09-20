@@ -160,6 +160,7 @@ def test_结果json包含全部约定字段() -> None:
 
     assert payload == {
         "schema": SCHEMA_VERSION,
+        "type": "result",
         "ok": False,
         "code": 21,
         "name": "CART_LIMIT_REACHED",

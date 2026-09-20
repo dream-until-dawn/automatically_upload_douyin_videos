@@ -51,6 +51,9 @@ class TaskResult:
         """
         return {
             "schema": SCHEMA_VERSION,
+            # 与进度行区分。开启进度回报后 stdout 会有多行，
+            # 结果永远是最后一行，见 docs/adr/0004-progress-reporting.md。
+            "type": "result",
             "ok": self.code.ok,
             "code": self.code.code,
             "name": self.code.name,

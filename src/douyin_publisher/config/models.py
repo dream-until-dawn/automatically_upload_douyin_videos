@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from douyin_publisher.config.runtime import (
     LogLevel,
+    ProgressOptions,
     ScreenshotOptions,
     Timeouts,
     validate_skip_stages,
@@ -103,6 +104,9 @@ class TaskConfig(BaseModel):
     )
     screenshot: ScreenshotOptions = Field(
         default_factory=ScreenshotOptions, description="失败现场截图"
+    )
+    progress: ProgressOptions = Field(
+        default_factory=ProgressOptions, description="进度回报"
     )
 
     # ------------------------------------------------------------------
