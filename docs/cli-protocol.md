@@ -60,7 +60,8 @@ python -m douyin_publisher <子命令> <参数>
 | `timeouts` | object | ❌ | 各环节等待上限，见 3.4 |
 | `browserArgs` | string[] | ❌ | 追加的 Chrome 启动参数，见 3.5 |
 | `logLevel` | string | ❌ | `quiet` / `normal`（默认）/ `debug` |
-| `skip` | string[] | ❌ | 要跳过的阶段，见 3.6 |
+| `skip` | string[] | ❌ | 要跳过的阶段，见 3.7 |
+| `screenshot` | object | ❌ | 失败现场截图，见 3.8 |
 
 > `cartTitel` 沿用上游既有拼写，不做更名，以保证对接零改动。
 
@@ -153,7 +154,32 @@ python -m douyin_publisher <子命令> <参数>
 > 若需要「跑完流程但不发布」，那是冒烟脚本演练模式的职责，
 > 不要试图用 `skip` 去掉发布步骤。
 
-### 3.8 示例
+### 3.8 screenshot：失败现场截图
+
+```json
+"screenshot": { "onFailure": true, "dir": "D:/logs/shots" }
+```
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `onFailure` | `true` | 失败时是否自动截图 |
+| `dir` | `""` | 存放目录，留空则用系统临时目录下的 `douyin_publisher_shots` |
+
+**默认开启**的理由：这类信息的价值几乎全在事后。
+等出了问题才想起来打开开关，那一次的现场已经没有了。
+
+截图路径会出现在结果 JSON 的 `screenshot` 字段中（成功时为 `null`）。
+文件名形如 `20260920-173144_task-42_cover.png`，含时间、任务 ID 与失败阶段，
+不必打开就能定位是哪个任务卡在哪一步。
+
+三点说明：
+
+- 截图**不会影响结果**。目录不可写、页面已关闭、磁盘满等情况一律降级为警告——
+  此时已经有一个明确的失败原因了，不该让截图问题把它盖掉。
+- 只在失败时截，成功路径不产生文件。
+- 截图可能包含账号信息，注意存放目录的权限与清理策略。
+
+### 3.9 示例
 
 ```json
 {
@@ -199,7 +225,8 @@ python -m douyin_publisher <子命令> <参数>
   "message": "无法添加购物车（已达挂车上限）",
   "taskId": "1",
   "douyinId": "1",
-  "elapsedMs": 8423
+  "elapsedMs": 8423,
+  "screenshot": "C:/Temp/douyin_publisher_shots/20260920-173144_1_cart.png"
 }
 ```
 
@@ -215,6 +242,7 @@ python -m douyin_publisher <子命令> <参数>
 | `message` | 中文描述 |
 | `taskId` / `douyinId` | 原样回传，便于上游对账 |
 | `elapsedMs` | 本次执行耗时（毫秒） |
+| `screenshot` | 失败现场截图的路径；成功或未启用时为 `null` |
 
 ### 4.3 兼容性承诺
 

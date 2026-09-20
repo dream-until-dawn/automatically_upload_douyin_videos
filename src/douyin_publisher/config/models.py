@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from douyin_publisher.config.runtime import (
     LogLevel,
+    ScreenshotOptions,
     Timeouts,
     validate_skip_stages,
 )
@@ -99,6 +100,9 @@ class TaskConfig(BaseModel):
     )
     skip: list[str] = Field(
         default_factory=list, description="要跳过的阶段名，仅限非必要环节"
+    )
+    screenshot: ScreenshotOptions = Field(
+        default_factory=ScreenshotOptions, description="失败现场截图"
     )
 
     # ------------------------------------------------------------------

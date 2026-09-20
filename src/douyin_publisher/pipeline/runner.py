@@ -25,10 +25,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from playwright.async_api import BrowserContext, Page
 
+from douyin_publisher.browser.screenshot import capture_failure
 from douyin_publisher.browser.selectors import PUBLISH_PAGE_URL
 from douyin_publisher.browser.toast import install_toast_listener
 from douyin_publisher.config.models import TaskConfig
@@ -95,6 +96,7 @@ class PipelineResult:
     code: ErrorCode
     stage: Stage
     message: str
+    screenshot: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -244,11 +246,22 @@ async def run_pipeline(
     if result is None:
         # 两者都没出结论，总超时兜底
         logger.error("[流程] 整体超时")
-        return PipelineResult(
+        result = PipelineResult(
             ErrorCode.PIPELINE_TIMEOUT,
             tracker.current,
             f"流程超过 {budget:.0f}s 仍未结束",
         )
+
+    # 失败时留下现场。
+    #
+    # 放在这里而不是各步骤内部，是因为失败有两个来源：步骤自身抛错，
+    # 以及哨兵中止。写在一处才能两种都覆盖到。
+    if not result.ok and config.screenshot.on_failure:
+        shot = await capture_failure(
+            page, config.screenshot.dir, config.task_id, result.stage
+        )
+        if shot:
+            result = replace(result, screenshot=shot)
 
     logger.info(f"[流程] 结论：{result}")
     return result
