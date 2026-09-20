@@ -1,0 +1,21 @@
+# 统一行尾，避免仓库里混入两种换行符。
+#
+# 默认全部以 LF 入库。Windows 上的 Python、Playwright、pytest 都能正确处理 LF，
+# 不做统一的话，每次提交都会刷出大量 "LF will be replaced by CRLF" 警告，
+# 真正需要注意的警告反而被淹没。
+
+* text=auto eol=lf
+
+# PowerShell 脚本保留 CRLF。
+# 这些脚本同时必须以 UTF-8 带 BOM 保存：Windows PowerShell 5.1 读取无 BOM 的
+# UTF-8 脚本时会按系统 ANSI 代码页解码，中文注释变成乱码并引发语法错误。
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不做任何转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary
+*.exe binary

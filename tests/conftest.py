@@ -79,3 +79,15 @@ def to_base64(payload: dict[str, Any]) -> str:
     """把配置字典编码为上游实际使用的 Base64 形式。"""
     raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     return base64.b64encode(raw).decode("ascii")
+
+
+def pytest_collection_modifyitems(items) -> None:
+    """自动给 tests/integration 下的用例打上 integration 标记。
+
+    集成测试需要启动真实浏览器，比单元测试慢一个量级。
+    自动打标记后，日常开发可以用 `-m "not integration"` 只跑快的那部分，
+    而不必依赖每个文件都记得手写标记。
+    """
+    for item in items:
+        if "integration" in str(item.path):
+            item.add_marker(pytest.mark.integration)
