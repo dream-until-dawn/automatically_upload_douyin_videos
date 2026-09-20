@@ -75,6 +75,35 @@ uv sync
 uv run playwright install chromium
 ```
 
+### 如果提示「'uv' 不是内部或外部命令」
+
+用 `pip install uv` 装的 uv，其可执行文件位于 Python 的 Scripts 目录，
+而那个目录默认不在 PATH 中。三种办法任选其一，**本文后续所有 `uv xxx` 命令都适用**：
+
+**① 用 `python -m uv` 代替 `uv`**（无需改环境，推荐）
+
+```bash
+python -m uv sync
+python -m uv run pytest
+```
+
+**② 依赖装好后，直接用虚拟环境里的解释器**（连 uv 都不需要）
+
+```bash
+.venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe scripts\smoke_real.py config.json
+```
+
+**③ 把 uv 所在目录加入 PATH**
+
+先查出它在哪：
+
+```bash
+python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+```
+
+把输出的目录加进系统环境变量 PATH，重开终端后 `uv` 即可直接使用。
+
 ## 使用
 
 ### 发布视频
@@ -167,10 +196,16 @@ uv run pytest -m integration       # 只跑集成测试（需浏览器）
 因此需要一个连真实账号的脚本来回答那个问题：
 
 ```bash
-cp config.example.json config.json   # 按实际情况填写，config.json 不入库
+copy config.example.json config.json   # 按实际情况填写，config.json 不入库
 
 uv run python scripts/smoke_real.py config.json            # 探测：只检查选择器，零副作用
 uv run python scripts/smoke_real.py config.json --dry-run  # 演练：执行到点击发布前停住
+```
+
+若 `uv` 不可用，等价写法（见上文「如果提示 'uv' 不是内部或外部命令」）：
+
+```bash
+.venv\Scripts\python.exe scripts\smoke_real.py config.json
 ```
 
 两种模式 **都不会发布**。发布步骤被从执行序列里排除掉，
