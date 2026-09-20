@@ -102,7 +102,7 @@ def test_base64解出的内容不是json也报19() -> None:
 
 @pytest.mark.parametrize(
     "missing_field",
-    ["execPath", "userDataDir", "taskId", "douyinId", "videoPath", "cartUrl"],
+    ["execPath", "userDataDir", "taskId", "douyinId", "videoPath"],
 )
 def test_缺少必填字段报19(valid_payload: dict[str, Any], missing_field: str) -> None:
     """缺字段属于调用方拼装格式有误，归类为解析失败。"""
@@ -115,7 +115,7 @@ def test_缺少必填字段报19(valid_payload: dict[str, Any], missing_field: s
 
 @pytest.mark.parametrize(
     "empty_field",
-    ["execPath", "userDataDir", "taskId", "douyinId", "videoPath", "cartUrl"],
+    ["execPath", "userDataDir", "taskId", "douyinId", "videoPath"],
 )
 def test_必填字段为空字符串报3(valid_payload: dict[str, Any], empty_field: str) -> None:
     """字段存在但为空属于取值不合法，与缺字段区分开。"""
@@ -136,7 +136,7 @@ def test_必填字段为纯空白同样报3(valid_payload: dict[str, Any]) -> No
 def test_选填字段缺失不报错(valid_payload: dict[str, Any]) -> None:
     """选填字段全部拿掉也应成功，并落到各自的默认值。"""
     required = {
-        "execPath", "userDataDir", "taskId", "douyinId", "videoPath", "cartUrl",
+        "execPath", "userDataDir", "taskId", "douyinId", "videoPath",
     }
     payload = {k: v for k, v in valid_payload.items() if k in required}
 
@@ -151,6 +151,33 @@ def test_未知字段被忽略(valid_payload: dict[str, Any]) -> None:
     payload = {**valid_payload, "someFutureField": "whatever"}
     config = bind_task_config(payload)
     assert config.task_id == "task-1"
+
+
+# ======================================================================
+# 商品链接：选填，留空即纯内容视频
+# ======================================================================
+
+
+def test_不填商品链接也能通过校验(valid_payload: dict[str, Any]) -> None:
+    """「不挂车」是一种正常用法，不是配置缺失。"""
+    payload = {k: v for k, v in valid_payload.items() if k != "cartUrl"}
+    config = bind_task_config(payload)
+
+    assert config.cart_url == ""
+    assert config.needs_cart is False
+
+
+@pytest.mark.parametrize("blank", ["", "   ", chr(9), chr(10)], ids=["空串", "空格", "制表符", "换行"])
+def test_空白商品链接视为不挂车(valid_payload: dict[str, Any], blank: str) -> None:
+    """纯空白与不填等价，避免上游传个空串就被当成要挂车。"""
+    config = bind_task_config({**valid_payload, "cartUrl": blank})
+    assert config.needs_cart is False
+
+
+def test_填了商品链接则需要挂车(valid_payload: dict[str, Any]) -> None:
+    """反向配对：确认 needs_cart 不是恒为 False。"""
+    config = bind_task_config({**valid_payload, "cartUrl": "https://example.com/1"})
+    assert config.needs_cart is True
 
 
 # ======================================================================

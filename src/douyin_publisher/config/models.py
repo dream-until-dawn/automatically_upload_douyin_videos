@@ -54,9 +54,13 @@ class TaskConfig(BaseModel):
     task_id: str = Field(alias="taskId", description="上游任务 ID，仅用于日志与回传")
     douyin_id: str = Field(alias="douyinId", description="抖音账号标识，仅用于日志与回传")
     video_path: str = Field(alias="videoPath", description="待发布视频的本地路径")
-    cart_url: str = Field(alias="cartUrl", description="商品（购物车）链接")
 
     # ---- 选填：内容 ----
+    #
+    # 留空表示发布不带商品的纯内容视频，挂车步骤会被自动跳过。
+    # 不设为必填是因为「不挂车」是一种正常用法，而不是配置缺失。
+    cart_url: str = Field("", alias="cartUrl", description="商品（购物车）链接")
+
     title: str = Field("", description="视频标题")
     desc: str = Field("", description="话题标签，英文逗号分隔，程序自动加 #")
     # 沿用上游既有拼写，不做更名，以保证对接零改动
@@ -123,6 +127,14 @@ class TaskConfig(BaseModel):
         if hours < MIN_PUBLISH_DELAY_HOURS:
             return DEFAULT_PUBLISH_DELAY_HOURS
         return min(hours, MAX_PUBLISH_DELAY_HOURS)
+
+    @property
+    def needs_cart(self) -> bool:
+        """是否需要挂载商品。
+
+        未配置商品链接即视为发布纯内容视频。
+        """
+        return bool(self.cart_url.strip())
 
     @property
     def skip_stages(self) -> frozenset[Stage]:

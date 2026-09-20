@@ -198,10 +198,20 @@ async def run_pipeline(
 
     # 按配置跳过非必要步骤。白名单已在配置校验阶段把关，
     # 上传与发布这类必要环节不可能出现在这里。
-    skipped = config.skip_stages
+    skipped = set(config.skip_stages)
+
+    # 未配置商品链接 = 发布纯内容视频，自动跳过挂车。
+    #
+    # 这里显式打一条日志：自动行为不能静默发生。
+    # 若使用者本想挂车却漏填了链接，任务会「成功」但没挂上商品——
+    # 一条明确的日志是他事后唯一能发现这件事的线索。
+    if not config.needs_cart and Stage.CART not in skipped:
+        logger.info("[流程] 未配置商品链接，跳过挂车（按纯内容视频处理）")
+        skipped.add(Stage.CART)
+
     if skipped:
         names = "、".join(s.title for s in steps if s.stage in skipped)
-        logger.info(f"[流程] 按配置跳过步骤：{names}")
+        logger.info(f"[流程] 实际跳过的步骤：{names}")
         steps = tuple(s for s in steps if s.stage not in skipped)
 
     # 一、打开发布页

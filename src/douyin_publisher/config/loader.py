@@ -27,14 +27,15 @@ from douyin_publisher.core.stages import Stage
 # 命令行传参时可能被 Shell 或上游附加在外层的字符，解析前一律剥除
 _WRAPPING_CHARS = "'\" \r\n\t"
 
-# 必填且不允许为空字符串的字段（字段名 -> 面向人的说明）
+# 必填且不允许为空字符串的字段（字段名 -> 面向人的说明）。
+#
+# cartUrl 不在其中：留空表示发布纯内容视频，属于正常用法而非配置缺失。
 _REQUIRED_FIELDS = {
     "exec_path": "execPath（浏览器路径）",
     "user_data_dir": "userDataDir（用户数据目录）",
     "task_id": "taskId（任务 ID）",
     "douyin_id": "douyinId（抖音账号标识）",
     "video_path": "videoPath（视频路径）",
-    "cart_url": "cartUrl（商品链接）",
 }
 
 

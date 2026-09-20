@@ -152,8 +152,8 @@ uv run python -m douyin_publisher publish "<Base64 编码的配置>"
 }
 ```
 
-`timeouts` 最常调的是 `upload`（视频大或带宽窄时）；`skip` 用于发布不带商品的
-纯内容视频。只暴露了调用方有判断依据去调的参数，理由见
+`timeouts` 最常调的是 `upload`（视频大或带宽窄时）。
+发布不带商品的纯内容视频时，`cartUrl` 留空即可，挂车会自动跳过。只暴露了调用方有判断依据去调的参数，理由见
 [ADR-0003](docs/adr/0003-runtime-options.md)。
 
 ### 清理进程
