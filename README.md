@@ -6,6 +6,62 @@
 以命令行子进程的形式被调度方拉起，执行一次任务后退出，
 通过 **进程退出码 + 结构化 JSON** 回报结论。
 
+```bash
+douyin_publisher.exe publish <Base64 编码的配置>
+```
+
+```json
+{"schema":1,"type":"result","ok":true,"code":0,"stage":"done","elapsedMs":75692,...}
+```
+
+---
+
+## 快速开始
+
+完整步骤见 **[接入指南](docs/getting-started.md)**，三步概览：
+
+```bash
+# 1. 装依赖（若提示 uv 不是内部命令，见接入指南第 1 节）
+uv sync
+
+# 2. 准备一个已登录抖音的 Chrome 画像（会弹出浏览器让你手动登录）
+uv run python scripts/prepare_profile.py C:/douyin_profiles/account_a
+
+# 3. 写配置后，先跑零副作用的探测确认环境没问题
+copy config.example.json config.json
+uv run python scripts/smoke_real.py config.json
+```
+
+确认无误后即可发布。**首次测试建议把 `whoCanSee` 设为「仅自己可见」。**
+
+> 第 2 步是最容易被忽略的：本程序**不做登录**，它复用某个 Chrome 用户数据目录里
+> 已有的登录态。并且请使用独立画像目录，不要指向日常浏览器——
+> 程序启动前会终止占用该目录的所有进程。
+
+---
+
+## 接到你的程序里
+
+三条约定：**退出码即结果**、**stdout 最后一行是 JSON**、**stderr 是过程日志**。
+
+```dart
+final result = await Process.run(exe, ['publish', base64Config]);
+final lines = (result.stdout as String).split('\n')
+    .map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+final r = jsonDecode(lines.last);
+
+if (r['ok'] == true)            markSuccess();
+else if (r['retryable'] == true) scheduleRetry();   // 平台/网络问题
+else                             markFailed(r['code'], r['message']);
+```
+
+**用 `retryable` 字段决定要不要重试，不要解析日志文本。**
+每个错误码的这个标记都是固定的契约。
+
+完整示例与错误处置见 [接入指南](docs/getting-started.md#6-接到你自己的程序里)。
+
+---
+
 ## 它解决的问题
 
 网页发布流程里有大量长等待：视频上传要几十秒到几分钟，发布结果要几秒到几十秒。
@@ -27,8 +83,7 @@ t=303s   终于醒来，返回「上传超时」   ← 时间白白浪费，且�
 调度方据此做出的重试决策也跟着错。
 
 本项目采用 **事件竞速中止**：主流程与致命事件哨兵作为两个并发任务同时运行，
-谁先出结论谁说了算。哨兵一旦命中致命提示，立即取消主流程——
-无论它正卡在哪个等待上，都会在一个调度周期内退出。
+谁先出结论谁说了算。哨兵一旦命中致命提示，立即取消主流程。
 
 这个差距是实测出来的，不是推演的。把哨兵改成「命中致命事件也不中止」之后
 重跑同一组测试：
@@ -38,10 +93,9 @@ t=303s   终于醒来，返回「上传超时」   ← 时间白白浪费，且�
 | 竞速中止（现状） | **0.45s** | `PRODUCT_NOT_SUPPORTED(22)` — 真实原因 |
 | 哨兵失效（变异） | 37s | `UPLOAD_TIMEOUT(11)` — 兜底超时码 |
 
-37 秒是测试里 40 秒预算的上限所致；生产配置下这个数字是上传等待窗口的
-300 秒。详见 [测试策略](docs/testing.md)。
-
 设计细节见 [架构设计](docs/architecture.md) 与 [ADR-0001](docs/adr/0001-async-race-abort.md)。
+
+---
 
 ## 特性
 
@@ -59,135 +113,41 @@ t=303s   终于醒来，返回「上传超时」   ← 时间白白浪费，且�
   并到创作者后台核对了定时时间与可见性确实生效
   （见 [探针结论](docs/probe-results.md)）。
 
-## 环境要求
+---
 
-| 项 | 要求 |
-| --- | --- |
-| 操作系统 | Windows 10 / 11 |
-| Python | 3.12 及以上（开发环境为 3.14） |
-| 浏览器 | 本机安装的 Google Chrome |
-| 账号 | 目标账号需已在指定的用户数据目录中登录 |
+## 配置速览
 
-## 快速开始
-
-```bash
-git clone https://github.com/dream-until-dawn/automatically_upload_douyin_videos.git
-cd automatically_upload_douyin_videos
-uv sync
-```
-
-集成测试需要一份 Chromium（生产运行用的是本机 Chrome，这一步只影响测试）：
-
-```bash
-uv run playwright install chromium
-```
-
-### 如果提示「'uv' 不是内部或外部命令」
-
-用 `pip install uv` 装的 uv，其可执行文件位于 Python 的 Scripts 目录，
-而那个目录默认不在 PATH 中。三种办法任选其一，**本文后续所有 `uv xxx` 命令都适用**：
-
-**① 用 `python -m uv` 代替 `uv`**（无需改环境，推荐）
-
-```bash
-python -m uv sync
-python -m uv run pytest
-```
-
-**② 依赖装好后，直接用虚拟环境里的解释器**（连 uv 都不需要）
-
-```bash
-.venv\Scripts\python.exe -m pytest
-.venv\Scripts\python.exe scripts\smoke_real.py config.json
-```
-
-**③ 把 uv 所在目录加入 PATH**
-
-先查出它在哪：
-
-```bash
-python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
-```
-
-把输出的目录加进系统环境变量 PATH，重开终端后 `uv` 即可直接使用。
-
-## 使用
-
-### 发布视频
-
-配置以单个命令行参数传入，支持 Base64 编码的 JSON（推荐，可规避 Windows
-命令行的转义问题）或裸 JSON 字符串：
-
-```bash
-uv run python -m douyin_publisher publish "<Base64 编码的配置>"
-```
-
-配置字段：
+必填只有 5 项，其余都可以先不管：
 
 ```json
 {
   "execPath": "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  "userDataDir": "D:/workspace/chrome_profiles/abc123",
+  "userDataDir": "C:/douyin_profiles/account_a",
   "taskId": "1",
   "douyinId": "1",
-  "videoPath": "C:/videos/demo.mp4",
-  "title": "夏日穿搭分享",
-  "desc": "夏日穿搭,清凉一夏,好物分享",
-  "cartUrl": "https://haohuo.jinritemai.com/...",
-  "cartTitel": "点击下方",
-  "publishTimeMode": "立即发布",
-  "publishTime": "24",
-  "whoCanSee": "仅自己可见",
-  "savePermission": "不允许",
-  "selfDeclaration": "无需添加自主声明"
+  "videoPath": "C:/videos/demo.mp4"
 }
 ```
 
-字段含义与取值见 [CLI 协议](docs/cli-protocol.md)。
+常用的可选项：
 
-还可以按环境调整运行时选项（全部可选，不配置时行为不变）：
-
-```json
-{
-  "timeouts": { "upload": 900 },
-  "browserArgs": ["--proxy-server=http://127.0.0.1:8080"],
-  "logLevel": "quiet",
-  "skip": ["cart"],
-  "screenshot": { "onFailure": true, "dir": "D:/logs/shots" },
-  "progress": { "enabled": true, "heartbeat": 15 }
-}
-```
-
-开启 `progress` 后 stdout 变为多行 JSON，结果仍在最后一行。
-若上游是整段 `json.loads(stdout)` 而非读最后一行，请保持它关闭。
-
-`timeouts` 最常调的是 `upload`（视频大或带宽窄时）。
-发布不带商品的纯内容视频时，`cartUrl` 留空即可，挂车会自动跳过。只暴露了调用方有判断依据去调的参数，理由见
-[ADR-0003](docs/adr/0003-runtime-options.md)。
-
-### 清理进程
-
-```bash
-uv run python -m douyin_publisher close-chrome "D:/workspace/chrome_profiles/abc123"
-uv run python -m douyin_publisher close-jianying
-```
-
-清理浏览器时只会终止 **命令行中带有目标 `--user-data-dir` 的进程**，
-不会按进程名批量杀 Chrome——你自己开着的浏览器窗口不受影响。
-
-### 输出
-
-| 通道 | 内容 |
+| 想要 | 配置 |
 | --- | --- |
-| stderr | 人类可读的中文过程日志 |
-| stdout | 有且仅有一行 JSON 结果 |
+| 挂商品 | `"cartUrl": "https://haohuo.jinritemai.com/..."` |
+| 发纯内容视频 | `cartUrl` 留空即可，挂车自动跳过 |
+| 标题与话题 | `"title": "...", "desc": "标签一,标签二"` |
+| 定时发布 | `"publishTimeMode": "定时发布", "publishTime": "24"` |
+| 视频大、网速慢 | `"timeouts": {"upload": 900}` |
+| 日志太吵 | `"logLevel": "quiet"` |
+| 实时进度与心跳 | `"progress": {"enabled": true, "heartbeat": 15}` |
+| 走代理 | `"browserArgs": ["--proxy-server=..."]` |
 
-```json
-{"schema":1,"ok":false,"code":21,"name":"CART_LIMIT_REACHED","category":"product","retryable":false,"stage":"cart","message":"无法添加购物车（已达挂车上限）","taskId":"1","douyinId":"1","elapsedMs":8423}
-```
+运行时选项全部可选，不配置时行为不变。
+只暴露了调用方有判断依据去调的参数，理由见 [ADR-0003](docs/adr/0003-runtime-options.md)。
 
-调度方读 stdout 最后一行即可拿到完整结论，无需对日志做正则匹配。
-`retryable` 字段直接回答「这次失败值不值得重试」。
+完整字段见 [CLI 协议](docs/cli-protocol.md)。
+
+---
 
 ## 错误码速查
 
@@ -202,7 +162,34 @@ uv run python -m douyin_publisher close-jianying
 | 21 / 22 / 23 | 商品自身问题 | ❌ |
 | 88 | 程序内部异常 | ❌ |
 
-完整表格见 [错误码契约](docs/error-codes.md)。
+逐码的处置建议见 [接入指南](docs/getting-started.md#按错误码处置)，
+完整契约见 [错误码契约](docs/error-codes.md)。
+
+---
+
+## 其他子命令
+
+```bash
+douyin_publisher.exe selfcheck                # 自检运行时依赖
+douyin_publisher.exe close-chrome "<画像目录>" # 清理占用该目录的浏览器
+douyin_publisher.exe close-jianying           # 清理剪辑软件进程
+```
+
+清理浏览器时只会终止 **命令行中带有目标 `--user-data-dir` 的进程**，
+不会按进程名批量杀 Chrome——你自己开着的浏览器窗口不受影响。
+
+---
+
+## 打包
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1
+```
+
+产出 `dist/douyin_publisher.exe`（约 52 MB，自带运行时，目标机器无需装 Python）。
+构建过程会自动做自检与命令行契约校验。
+
+---
 
 ## 开发
 
@@ -210,12 +197,10 @@ uv run python -m douyin_publisher close-jianying
 uv run pytest                      # 全部测试（串行约 10 分钟）
 uv run pytest -n 8                 # 并行，本机实测约 3.5 分钟
 uv run pytest -m "not integration" # 只跑单元测试（秒级）
-uv run pytest -m integration       # 只跑集成测试（需浏览器）
 ```
 
 集成测试驱动的是 `tests/fixtures/pages/` 下的本地模拟页，
 不连真实抖音——线上页面不可控，且会产生真实的发布行为。
-模拟页支持按环节注入失败场景，可在毫秒级复现各类异常。
 
 ### 真实环境冒烟
 
@@ -224,35 +209,42 @@ uv run pytest -m integration       # 只跑集成测试（需浏览器）
 因此需要一个连真实账号的脚本来回答那个问题：
 
 ```bash
-copy config.example.json config.json   # 按实际情况填写，config.json 不入库
-
 uv run python scripts/smoke_real.py config.json            # 探测：只检查选择器，零副作用
 uv run python scripts/smoke_real.py config.json --dry-run  # 演练：执行到点击发布前停住
 ```
 
-若 `uv` 不可用，等价写法（见上文「如果提示 'uv' 不是内部或外部命令」）：
-
-```bash
-.venv\Scripts\python.exe scripts\smoke_real.py config.json
-```
-
 两种模式 **都不会发布**。发布步骤被从执行序列里排除掉，
 而不是「跑到那里再判断要不要点」——后者留有意外发布的可能。
-这个性质由 `tests/unit/test_dry_run_steps.py` 强制校验。
 
 测试理念见 [测试策略](docs/testing.md)，其中详述了防「假绿」的几条机制。
+
+---
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [架构设计](docs/architecture.md) | 分层、目录结构、核心机制 |
+| **[接入指南](docs/getting-started.md)** | **从零跑通到接入上游，先看这个** |
 | [CLI 协议](docs/cli-protocol.md) | 调用方式、配置字段、输出格式 |
 | [错误码契约](docs/error-codes.md) | 完整错误码表与责任分类 |
+| [架构设计](docs/architecture.md) | 分层、目录结构、核心机制 |
 | [测试策略](docs/testing.md) | 分层测试与防假绿机制 |
+| [探针结论](docs/probe-results.md) | 可行性验证与真实环境验证记录 |
 | [分期计划](docs/roadmap.md) | 里程碑与验收标准 |
-| [探针结论](docs/probe-results.md) | 动工前的可行性验证记录 |
 | [ADR](docs/adr/) | 架构决策记录 |
+
+---
+
+## 环境要求
+
+| 项 | 要求 |
+| --- | --- |
+| 操作系统 | Windows 10 / 11 |
+| Python | 3.12 及以上（用打包好的 exe 则不需要） |
+| 浏览器 | 本机安装的 Google Chrome |
+| 账号 | 目标账号需已在指定的用户数据目录中登录 |
+
+---
 
 ## 声明
 
